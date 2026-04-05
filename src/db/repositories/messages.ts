@@ -164,9 +164,10 @@ export class MessagesRepository extends BaseRepository {
   /**
    * Get total message count
    */
-  async getMessageCount(): Promise<number> {
+  async getMessageCount(sourceId?: string): Promise<number> {
     const { messages } = this.tables;
-    const result = await this.db.select({ count: count() }).from(messages);
+    const result = await this.db.select({ count: count() }).from(messages)
+      .where(this.withSourceScope(messages, sourceId));
     return Number(result[0].count);
   }
 

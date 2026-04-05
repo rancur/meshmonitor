@@ -110,9 +110,10 @@ export class NodesRepository extends BaseRepository {
   /**
    * Get total node count
    */
-  async getNodeCount(): Promise<number> {
+  async getNodeCount(sourceId?: string): Promise<number> {
     const { nodes } = this.tables;
-    const result = await this.db.select({ count: count() }).from(nodes);
+    const result = await this.db.select({ count: count() }).from(nodes)
+      .where(this.withSourceScope(nodes, sourceId));
     return Number(result[0].count);
   }
 

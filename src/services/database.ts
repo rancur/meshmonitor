@@ -3478,18 +3478,23 @@ class DatabaseService {
     }));
   }
 
-  async getMessagesByDayAsync(days: number = 7): Promise<Array<{ date: string; count: number }>> {
+  async getMessagesByDayAsync(days: number = 7, sourceId?: string): Promise<Array<{ date: string; count: number }>> {
     const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+    const pgSourceClause = sourceId ? ` AND "sourceId" = $2` : '';
+    const mysqlSourceClause = sourceId ? ` AND sourceId = ?` : '';
+    const sqliteSourceClause = sourceId ? ` AND sourceId = ?` : '';
 
     if (this.drizzleDbType === 'postgres') {
       const client = await this.postgresPool!.connect();
       try {
+        const params: any[] = [cutoff];
+        if (sourceId) params.push(sourceId);
         const result = await client.query(
           `SELECT to_char(to_timestamp(timestamp/1000), 'YYYY-MM-DD') as date, COUNT(*) as count
-           FROM messages WHERE timestamp > $1
+           FROM messages WHERE timestamp > $1${pgSourceClause}
            GROUP BY to_char(to_timestamp(timestamp/1000), 'YYYY-MM-DD')
            ORDER BY date`,
-          [cutoff]
+          params
         );
         return result.rows.map((row: any) => ({ date: row.date, count: Number(row.count) }));
       } finally {
@@ -3497,14 +3502,27 @@ class DatabaseService {
       }
     } else if (this.drizzleDbType === 'mysql') {
       const pool = this.mysqlPool!;
+      const params: any[] = [cutoff];
+      if (sourceId) params.push(sourceId);
       const [rows] = await pool.query(
         `SELECT DATE_FORMAT(FROM_UNIXTIME(timestamp/1000), '%Y-%m-%d') as date, COUNT(*) as count
-         FROM messages WHERE timestamp > ?
+         FROM messages WHERE timestamp > ?${mysqlSourceClause}
          GROUP BY DATE_FORMAT(FROM_UNIXTIME(timestamp/1000), '%Y-%m-%d')
          ORDER BY date`,
-        [cutoff]
+        params
       );
       return (rows as any[]).map((row: any) => ({ date: row.date, count: Number(row.count) }));
+    }
+
+    // SQLite
+    if (sourceId) {
+      const stmt = this.db.prepare(`
+        SELECT date(timestamp/1000, 'unixepoch') as date, COUNT(*) as count
+        FROM messages WHERE timestamp > ?${sqliteSourceClause}
+        GROUP BY date(timestamp/1000, 'unixepoch') ORDER BY date
+      `);
+      const results = stmt.all(cutoff, sourceId) as Array<{ date: string; count: number }>;
+      return results.map(row => ({ date: row.date, count: Number(row.count) }));
     }
     return this.getMessagesByDay(days);
   }

@@ -3165,12 +3165,13 @@ apiRouter.post('/channels/import-config', requirePermission('configuration', 'wr
   }
 });
 
-apiRouter.get('/stats', requirePermission('dashboard', 'read'), async (_req, res) => {
+apiRouter.get('/stats', requirePermission('dashboard', 'read'), async (req, res) => {
   try {
-    const messageCount = await databaseService.messages.getMessageCount();
-    const nodeCount = await databaseService.nodes.getNodeCount();
-    const channelCount = await databaseService.channels.getChannelCount();
-    const messagesByDay = await databaseService.getMessagesByDayAsync(7);
+    const statsSourceId = req.query.sourceId as string | undefined;
+    const messageCount = await databaseService.messages.getMessageCount(statsSourceId);
+    const nodeCount = await databaseService.nodes.getNodeCount(statsSourceId);
+    const channelCount = await databaseService.channels.getChannelCount(statsSourceId);
+    const messagesByDay = await databaseService.getMessagesByDayAsync(7, statsSourceId);
 
     res.json({
       messageCount,
@@ -4115,7 +4116,8 @@ apiRouter.delete('/telemetry/:nodeId/:telemetryType', requireAuth(), requirePerm
 // Check which nodes have telemetry data
 apiRouter.get('/telemetry/available/nodes', requirePermission('info', 'read'), async (req, res) => {
   try {
-    const allNodes = await databaseService.nodes.getAllNodes();
+    const telAvailSourceId = req.query.sourceId as string | undefined;
+    const allNodes = await databaseService.nodes.getAllNodes(telAvailSourceId);
     // Filter nodes based on channel read permissions
     const nodes = await filterNodesByChannelPermission(allNodes, (req as any).user);
 
