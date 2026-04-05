@@ -21,13 +21,19 @@ import { CsrfProvider } from './contexts/CsrfContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { SourceProvider } from './contexts/SourceContext';
 
-/** Wraps the existing App in a SourceProvider keyed to the :sourceId URL param */
+/**
+ * Wraps App with SourceProvider then WebSocketProvider so that useWebSocket()
+ * can call useSource() and get the real sourceId for room subscription and
+ * cache key targeting. WebSocketProvider must be INSIDE SourceProvider.
+ */
 function SourceApp() {
   const { sourceId } = useParams<{ sourceId: string }>();
   if (!sourceId) return <Navigate to="/" replace />;
   return (
     <SourceProvider sourceId={sourceId}>
-      <App />
+      <WebSocketProvider>
+        <App />
+      </WebSocketProvider>
     </SourceProvider>
   );
 }
@@ -42,6 +48,16 @@ const sharedProviders = (children: React.ReactNode) => (
   </CsrfProvider>
 );
 
+// Source routes need auth but NOT an outer WebSocket — SourceApp provides its own
+// WebSocketProvider inside SourceProvider so useSource() is in scope.
+const sourceRouteProviders = (children: React.ReactNode) => (
+  <CsrfProvider>
+    <AuthProvider>
+      {children}
+    </AuthProvider>
+  </CsrfProvider>
+);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>}>
@@ -51,10 +67,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             {/* Standalone routes — no auth providers needed */}
             <Route path="packet-monitor" element={<PacketMonitorPage />} />
 
-            {/* Source-specific view — full App with SourceProvider */}
+            {/* Source-specific view — SourceProvider wraps WebSocketProvider for correct sourceId */}
             <Route
               path="source/:sourceId/*"
-              element={sharedProviders(<SourceApp />)}
+              element={sourceRouteProviders(<SourceApp />)}
             />
 
             {/* Unified cross-source views */}
