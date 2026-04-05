@@ -2639,7 +2639,7 @@ function App() {
 
   const handleDisconnect = async () => {
     try {
-      await api.disconnectFromNode();
+      await api.disconnectFromNode(sourceId);
       setConnectionStatus('user-disconnected');
       showToast(t('toast.disconnected_from_node'), 'info');
     } catch (error) {
@@ -2651,7 +2651,7 @@ function App() {
   const handleReconnect = async () => {
     try {
       setConnectionStatus('connecting');
-      await api.reconnectToNode();
+      await api.reconnectToNode(sourceId);
       showToast(t('toast.reconnecting_to_node'), 'info');
       // Status will update via polling
     } catch (error) {
@@ -2665,7 +2665,7 @@ function App() {
   const handleNodeClick = async () => {
     if (authStatus?.authenticated) {
       try {
-        const info = await api.getConnectionInfo();
+        const info = await api.getConnectionInfo(sourceId);
         setNodeConnectionInfo({
           nodeIp: info.nodeIp,
           tcpPort: info.tcpPort,

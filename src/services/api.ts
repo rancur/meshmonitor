@@ -1159,12 +1159,13 @@ class ApiService {
   }
 
   // Connection control methods
-  async disconnectFromNode() {
+  async disconnectFromNode(sourceId?: string | null) {
     await this.ensureBaseUrl();
     const response = await fetch(`${this.baseUrl}/api/connection/disconnect`, {
       method: 'POST',
       headers: this.getHeadersWithCsrf(),
-      credentials: 'include'
+      credentials: 'include',
+      body: sourceId ? JSON.stringify({ sourceId }) : undefined,
     });
 
     if (!response.ok) {
@@ -1175,12 +1176,13 @@ class ApiService {
     return response.json();
   }
 
-  async reconnectToNode() {
+  async reconnectToNode(sourceId?: string | null) {
     await this.ensureBaseUrl();
     const response = await fetch(`${this.baseUrl}/api/connection/reconnect`, {
       method: 'POST',
       headers: this.getHeadersWithCsrf(),
-      credentials: 'include'
+      credentials: 'include',
+      body: sourceId ? JSON.stringify({ sourceId }) : undefined,
     });
 
     if (!response.ok) {
@@ -1191,7 +1193,7 @@ class ApiService {
     return response.json();
   }
 
-  async getConnectionInfo(): Promise<{
+  async getConnectionInfo(sourceId?: string | null): Promise<{
     connected: boolean;
     nodeResponsive: boolean;
     configuring: boolean;
@@ -1203,7 +1205,10 @@ class ApiService {
     userDisconnected?: boolean;
   }> {
     await this.ensureBaseUrl();
-    const response = await fetch(`${this.baseUrl}/api/connection/info`, {
+    const url = sourceId
+      ? `${this.baseUrl}/api/connection/info?sourceId=${encodeURIComponent(sourceId)}`
+      : `${this.baseUrl}/api/connection/info`;
+    const response = await fetch(url, {
       credentials: 'include'
     });
 
