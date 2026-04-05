@@ -1051,8 +1051,8 @@ class MeshtasticManager implements ISourceManager {
             return;
           }
 
-          // Use async version which supports PostgreSQL/MySQL
-          const targetNode = await databaseService.getNodeNeedingTracerouteAsync(this.localNodeInfo.nodeNum);
+          // Use async version which supports PostgreSQL/MySQL; scope to this source
+          const targetNode = await databaseService.getNodeNeedingTracerouteAsync(this.localNodeInfo.nodeNum, this.sourceId);
           if (targetNode) {
             const channel = targetNode.channel ?? 0; // Use node's channel, default to 0
             const targetName = targetNode.longName || targetNode.nodeId;
@@ -1249,7 +1249,7 @@ class MeshtasticManager implements ISourceManager {
       return;
     }
 
-    const targetNode = await databaseService.getNodeNeedingTimeSyncAsync();
+    const targetNode = await databaseService.getNodeNeedingTimeSyncAsync(this.sourceId);
     if (!targetNode) {
       logger.info('🕐 Time sync: No nodes available for syncing');
       return;
@@ -1286,7 +1286,7 @@ class MeshtasticManager implements ISourceManager {
       return;
     }
 
-    const targetNode = await databaseService.getNodeNeedingRemoteAdminCheckAsync(this.localNodeInfo.nodeNum);
+    const targetNode = await databaseService.getNodeNeedingRemoteAdminCheckAsync(this.localNodeInfo.nodeNum, this.sourceId);
     if (!targetNode) {
       logger.info('🔑 Remote admin scan: No nodes available for scanning');
       return;

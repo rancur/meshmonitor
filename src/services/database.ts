@@ -5234,7 +5234,7 @@ class DatabaseService {
    * Async version of getNodeNeedingTraceroute - works with all database backends
    * Returns a node that needs a traceroute based on configured filters and timing
    */
-  async getNodeNeedingTracerouteAsync(localNodeNum: number): Promise<DbNode | null> {
+  async getNodeNeedingTracerouteAsync(localNodeNum: number, sourceId?: string): Promise<DbNode | null> {
     const now = Date.now();
     const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
     const expirationHours = this.getTracerouteExpirationHours();
@@ -5245,18 +5245,20 @@ class DatabaseService {
     const maxNodeAgeHours = parseInt(this.getSetting('maxNodeAgeHours') || '24');
     const activeNodeCutoff = Math.floor(Date.now() / 1000) - (maxNodeAgeHours * 60 * 60);
 
-    // For SQLite, fallback to sync method
+    // For SQLite, use repository (which now supports sourceId)
     if (this.drizzleDbType === 'sqlite' || !this.nodesRepo) {
-      return this.getNodeNeedingTraceroute(localNodeNum);
+      if (!sourceId) return this.getNodeNeedingTraceroute(localNodeNum);
+      // Use repo path for SQLite when sourceId is needed
     }
 
     try {
       // Get eligible nodes from repository
-      let eligibleNodes = await this.nodesRepo.getEligibleNodesForTraceroute(
+      let eligibleNodes = await this.nodesRepo!.getEligibleNodesForTraceroute(
         localNodeNum,
         activeNodeCutoff,
         now - THREE_HOURS_MS,
-        now - EXPIRATION_MS
+        now - EXPIRATION_MS,
+        sourceId
       );
 
       // Last heard and hop range filters (AND logic, applied before OR union filters)
@@ -5398,7 +5400,7 @@ class DatabaseService {
    * Get a node that needs remote admin checking.
    * Returns null if no nodes need checking.
    */
-  async getNodeNeedingRemoteAdminCheckAsync(localNodeNum: number): Promise<DbNode | null> {
+  async getNodeNeedingRemoteAdminCheckAsync(localNodeNum: number, sourceId?: string): Promise<DbNode | null> {
     try {
       // Get maxNodeAgeHours setting to filter only active nodes
       // lastHeard is stored in SECONDS (Unix timestamp)
@@ -5414,7 +5416,8 @@ class DatabaseService {
         const node = await this.nodesRepo.getNodeNeedingRemoteAdminCheckAsync(
           localNodeNum,
           activeNodeCutoffSeconds,
-          expirationMsAgo
+          expirationMsAgo,
+          sourceId
         );
         return node as DbNode | null;
       }
@@ -10289,7 +10292,7 @@ class DatabaseService {
   /**
    * Get a node that needs time sync
    */
-  async getNodeNeedingTimeSyncAsync(): Promise<DbNode | null> {
+  async getNodeNeedingTimeSyncAsync(sourceId?: string): Promise<DbNode | null> {
     const activeHours = 48; // Only consider nodes heard in last 48 hours
     // lastHeard is stored in seconds, so convert cutoff to seconds
     const activeNodeCutoff = Math.floor((Date.now() - (activeHours * 60 * 60 * 1000)) / 1000);
@@ -10310,7 +10313,8 @@ class DatabaseService {
     const node = await this.nodes.getNodeNeedingTimeSyncAsync(
       activeNodeCutoff,
       expirationMsAgo,
-      filterNodeNums
+      filterNodeNums,
+      sourceId
     );
     return node as DbNode | null;
   }

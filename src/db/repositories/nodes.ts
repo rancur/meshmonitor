@@ -616,16 +616,19 @@ export class NodesRepository extends BaseRepository {
     localNodeNum: number,
     activeNodeCutoffSeconds: number,
     threeHoursAgoMs: number,
-    expirationMsAgo: number
+    expirationMsAgo: number,
+    sourceId?: string
   ): Promise<DbNode[]> {
     if (this.isSQLite()) {
       const db = this.getSqliteDb();
+      const sourceFilter = sourceId ? sql` AND n.sourceId = ${sourceId}` : sql``;
       // SQLite uses raw SQL for the complex subquery
       const results = await db.all<DbNode>(sql`
         SELECT n.*
         FROM nodes n
         WHERE n.nodeNum != ${localNodeNum}
           AND n.lastHeard > ${activeNodeCutoffSeconds}
+          ${sourceFilter}
           AND (
             -- Category 1: No traceroute exists, and (never requested OR requested > 3 hours ago)
             (
@@ -646,11 +649,13 @@ export class NodesRepository extends BaseRepository {
       return results.map(r => this.normalizeNode(r));
     } else if (this.isMySQL()) {
       const db = this.getMysqlDb();
+      const sourceFilter = sourceId ? sql` AND n.sourceId = ${sourceId}` : sql``;
       const results = await db.execute(sql`
         SELECT n.*
         FROM nodes n
         WHERE n.nodeNum != ${localNodeNum}
           AND n.lastHeard > ${activeNodeCutoffSeconds}
+          ${sourceFilter}
           AND (
             (
               (SELECT COUNT(*) FROM traceroutes t
@@ -677,11 +682,13 @@ export class NodesRepository extends BaseRepository {
       const fromNodeNum = this.col('fromNodeNum');
       const toNodeNum = this.col('toNodeNum');
       const lastTracerouteRequest = this.col('lastTracerouteRequest');
+      const sourceFilter = sourceId ? sql` AND n."sourceId" = ${sourceId}` : sql``;
       const results = await db.execute(sql`
         SELECT n.*
         FROM nodes n
         WHERE n.${nodeNum} != ${localNodeNum}
           AND n.${lastHeard} > ${activeNodeCutoffSeconds}
+          ${sourceFilter}
           AND (
             (
               (SELECT COUNT(*) FROM traceroutes t
@@ -736,7 +743,8 @@ export class NodesRepository extends BaseRepository {
   async getNodeNeedingRemoteAdminCheckAsync(
     localNodeNum: number,
     activeNodeCutoff: number,
-    expirationMsAgo: number
+    expirationMsAgo: number,
+    sourceId?: string
   ): Promise<DbNode | null> {
     const { nodes } = this.tables;
     const results = await this.db
@@ -751,7 +759,8 @@ export class NodesRepository extends BaseRepository {
           or(
             isNull(nodes.lastRemoteAdminCheck),
             lt(nodes.lastRemoteAdminCheck, expirationMsAgo)
-          )
+          ),
+          this.withSourceScope(nodes, sourceId)
         )
       )
       .orderBy(desc(nodes.lastHeard))
@@ -802,7 +811,8 @@ export class NodesRepository extends BaseRepository {
   async getNodeNeedingTimeSyncAsync(
     activeNodeCutoff: number,
     expirationMsAgo: number,
-    filterNodeNums?: number[]
+    filterNodeNums?: number[],
+    sourceId?: string
   ): Promise<DbNode | null> {
     const { nodes } = this.tables;
     const baseConditions = [
@@ -818,6 +828,9 @@ export class NodesRepository extends BaseRepository {
     if (filterNodeNums && filterNodeNums.length > 0) {
       baseConditions.push(inArray(nodes.nodeNum, filterNodeNums));
     }
+
+    const sourceScope = this.withSourceScope(nodes, sourceId);
+    if (sourceScope) baseConditions.push(sourceScope);
 
     const results = await this.db
       .select()
