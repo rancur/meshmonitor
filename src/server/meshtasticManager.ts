@@ -2956,8 +2956,8 @@ class MeshtasticManager implements ISourceManager {
       logger.debug('📱 Checking for local node info in database...');
 
       // Try to load previously saved local node info from settings
-      const savedNodeNum = await databaseService.settings.getSetting('localNodeNum');
-      const savedNodeId = await databaseService.settings.getSetting('localNodeId');
+      const savedNodeNum = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
+      const savedNodeId = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
 
       if (savedNodeNum && savedNodeId) {
         const nodeNum = parseInt(savedNodeNum);
@@ -3020,12 +3020,12 @@ class MeshtasticManager implements ISourceManager {
       : null;
 
     // Check for node ID mismatch with previously stored values
-    const previousNodeNum = await databaseService.settings.getSetting('localNodeNum');
-    const previousNodeId = await databaseService.settings.getSetting('localNodeId');
+    const previousNodeNum = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
+    const previousNodeId = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
     if (previousNodeNum && previousNodeId) {
       const prevNum = parseInt(previousNodeNum);
       if (prevNum !== nodeNum) {
-        const storedDeviceId = await databaseService.settings.getSetting('localDeviceId');
+        const storedDeviceId = await databaseService.settings.getSetting(this.localNodeSettingKey('localDeviceId'));
 
         if (deviceId && storedDeviceId && deviceId === storedDeviceId) {
           // Same physical device rebooted with a different nodeNum.
@@ -3069,8 +3069,8 @@ class MeshtasticManager implements ISourceManager {
           await databaseService.suppressGhostNodeAsync(prevNum);
 
           // Update settings to new nodeNum/nodeId — localDeviceId stays the same
-          await databaseService.settings.setSetting('localNodeNum', nodeNum.toString());
-          await databaseService.settings.setSetting('localNodeId', nodeId);
+          await databaseService.settings.setSetting(this.localNodeSettingKey('localNodeNum'), nodeNum.toString());
+          await databaseService.settings.setSetting(this.localNodeSettingKey('localNodeId'), nodeId);
 
           // Clear init config cache to force VN clients to get fresh config with correct identity
           this.initConfigCache = [];
@@ -3113,7 +3113,7 @@ class MeshtasticManager implements ISourceManager {
 
           // Update stored device_id if new device provides one
           if (deviceId) {
-            await databaseService.settings.setSetting('localDeviceId', deviceId);
+            await databaseService.settings.setSetting(this.localNodeSettingKey('localDeviceId'), deviceId);
           }
         }
       }
@@ -3121,16 +3121,16 @@ class MeshtasticManager implements ISourceManager {
 
     // Store device_id on first encounter or when it wasn't previously stored
     if (deviceId) {
-      const storedDeviceId = await databaseService.settings.getSetting('localDeviceId');
+      const storedDeviceId = await databaseService.settings.getSetting(this.localNodeSettingKey('localDeviceId'));
       if (!storedDeviceId) {
-        await databaseService.settings.setSetting('localDeviceId', deviceId);
+        await databaseService.settings.setSetting(this.localNodeSettingKey('localDeviceId'), deviceId);
         logger.debug(`💾 Stored device_id: ${deviceId}`);
       }
     }
 
     // Save local node info to settings for persistence
-    await databaseService.settings.setSetting('localNodeNum', nodeNum.toString());
-    await databaseService.settings.setSetting('localNodeId', nodeId);
+    await databaseService.settings.setSetting(this.localNodeSettingKey('localNodeNum'), nodeNum.toString());
+    await databaseService.settings.setSetting(this.localNodeSettingKey('localNodeId'), nodeId);
     logger.debug(`💾 Saved local node info to settings: ${nodeId} (${nodeNum})`);
 
     // Check if we already have this node with actual names in the database
@@ -3204,6 +3204,13 @@ class MeshtasticManager implements ISourceManager {
 
   getLocalNodeInfo(): { nodeNum: number; nodeId: string; longName: string; shortName: string; hwModel?: number; firmwareVersion?: string; rebootCount?: number; isLocked?: boolean } | null {
     return this.localNodeInfo;
+  }
+
+  /** Returns source-scoped settings keys for local node identity persistence.
+   *  Each source manager stores its own localNodeNum/localNodeId so managers
+   *  don't clobber each other's values when running side-by-side. */
+  private localNodeSettingKey(base: string): string {
+    return this.sourceId && this.sourceId !== 'default' ? `${base}_${this.sourceId}` : base;
   }
 
   /**

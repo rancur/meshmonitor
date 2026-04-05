@@ -198,6 +198,32 @@ router.get('/:id/nodes', requirePermission('nodes', 'read'), async (req: Request
     if (!source) return res.status(404).json({ error: 'Source not found' });
 
     const nodes = await databaseService.nodes.getAllNodes(source.id);
+
+    // The local node for this source may be stored under a different sourceId in the DB
+    // (e.g. another source saw it first). Always include the manager's local node if absent.
+    const manager = sourceManagerRegistry.getManager(source.id);
+    if (manager) {
+      const localNodeInfo = manager.getLocalNodeInfo();
+      if (localNodeInfo && localNodeInfo.nodeNum && !nodes.some(n => n.nodeNum === localNodeInfo.nodeNum)) {
+        // Fetch the full node record from DB (regardless of sourceId) and inject it
+        const localNode = await databaseService.nodes.getNode(localNodeInfo.nodeNum);
+        if (localNode) {
+          nodes.push(localNode);
+        } else {
+          // Synthesize a minimal record if not yet in DB
+          nodes.push({
+            nodeNum: localNodeInfo.nodeNum,
+            nodeId: localNodeInfo.nodeId,
+            longName: localNodeInfo.longName,
+            shortName: localNodeInfo.shortName,
+            hwModel: localNodeInfo.hwModel ?? 0,
+            lastHeard: Math.floor(Date.now() / 1000),
+            sourceId: source.id,
+          } as any);
+        }
+      }
+    }
+
     const user = (req as any).user ?? null;
 
     // Filter by channel viewOnMap permissions and mask private position channels

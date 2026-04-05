@@ -23,6 +23,7 @@ export interface ISourceManager {
   start(): Promise<void>;
   stop(): Promise<void>;
   getStatus(): SourceStatus;
+  getLocalNodeInfo(): { nodeNum: number; nodeId: string; longName: string; shortName: string; hwModel?: number; firmwareVersion?: string; rebootCount?: number; isLocked?: boolean } | null;
 }
 
 /**
