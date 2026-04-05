@@ -343,15 +343,18 @@ export class NodesRepository extends BaseRepository {
   /**
    * Get nodes with key security issues
    */
-  async getNodesWithKeySecurityIssues(): Promise<DbNode[]> {
+  async getNodesWithKeySecurityIssues(sourceId?: string): Promise<DbNode[]> {
     const { nodes } = this.tables;
     const result = await this.db
       .select()
       .from(nodes)
       .where(
-        or(
-          eq(nodes.keyIsLowEntropy, true),
-          eq(nodes.duplicateKeyDetected, true)
+        and(
+          or(
+            eq(nodes.keyIsLowEntropy, true),
+            eq(nodes.duplicateKeyDetected, true)
+          ),
+          this.withSourceScope(nodes, sourceId)
         )
       )
       .orderBy(desc(nodes.lastHeard));

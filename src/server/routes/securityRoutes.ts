@@ -19,10 +19,11 @@ const router = Router();
 router.use(requirePermission('security', 'read'));
 
 // Get all nodes with security issues
-router.get('/issues', async (_req: Request, res: Response) => {
+router.get('/issues', async (req: Request, res: Response) => {
   try {
-    const nodesWithKeyIssues = await databaseService.getNodesWithKeySecurityIssuesAsync();
-    const nodesWithExcessivePackets = await databaseService.getNodesWithExcessivePacketsAsync();
+    const secSourceId = req.query.sourceId as string | undefined;
+    const nodesWithKeyIssues = await databaseService.getNodesWithKeySecurityIssuesAsync(secSourceId);
+    const nodesWithExcessivePackets = await databaseService.getNodesWithExcessivePacketsAsync(secSourceId);
 
     // Combine and deduplicate
     const allIssueNodes = new Map<number, any>();
@@ -74,7 +75,7 @@ router.get('/issues', async (_req: Request, res: Response) => {
     }
 
     // Add time offset nodes
-    const nodesWithTimeOffset = await databaseService.getNodesWithTimeOffsetIssuesAsync();
+    const nodesWithTimeOffset = await databaseService.getNodesWithTimeOffsetIssuesAsync(secSourceId);
 
     for (const node of nodesWithTimeOffset) {
       if (!allIssueNodes.has(node.nodeNum)) {
@@ -110,7 +111,7 @@ router.get('/issues', async (_req: Request, res: Response) => {
     const timeOffsetNodes = nodesWithIssues.filter(node => node.isTimeOffsetIssue);
 
     // Get top 5 broadcasters for spam analysis
-    const topBroadcasters = await databaseService.getTopBroadcastersAsync(5);
+    const topBroadcasters = await databaseService.getTopBroadcastersAsync(5, secSourceId);
 
     return res.json({
       total: nodesWithIssues.length,

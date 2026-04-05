@@ -3781,9 +3781,10 @@ const getEffectivePosition = (node: Awaited<ReturnType<typeof databaseService.no
 };
 
 // Get all neighbor info (latest per node pair)
-apiRouter.get('/neighbor-info', requirePermission('info', 'read'), async (_req, res) => {
+apiRouter.get('/neighbor-info', requirePermission('info', 'read'), async (req, res) => {
   try {
-    const neighborInfo = databaseService.getLatestNeighborInfoPerNode();
+    const neighborInfoSourceId = req.query.sourceId as string | undefined;
+    const neighborInfo = databaseService.getLatestNeighborInfoPerNodeScoped(neighborInfoSourceId);
 
     // Get max node age setting (default 24 hours)
     const maxNodeAgeStr = await databaseService.settings.getSetting('maxNodeAge');

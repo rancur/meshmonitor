@@ -2360,12 +2360,21 @@ class DatabaseService {
    * Get nodes with key security issues (low-entropy or duplicate keys) - async version
    * Works with PostgreSQL, MySQL, and SQLite through the repository pattern
    */
-  async getNodesWithKeySecurityIssuesAsync(): Promise<DbNode[]> {
+  async getNodesWithKeySecurityIssuesAsync(sourceId?: string): Promise<DbNode[]> {
     if (this.drizzleDbType !== 'sqlite') {
-      const nodes = await this.nodes.getNodesWithKeySecurityIssues();
+      const nodes = await this.nodes.getNodesWithKeySecurityIssues(sourceId);
       return nodes as unknown as DbNode[];
     }
     // SQLite fallback using raw SQL on main connection
+    if (sourceId) {
+      const stmt = this.db.prepare(`
+        SELECT * FROM nodes
+        WHERE (keyIsLowEntropy = 1 OR duplicateKeyDetected = 1) AND sourceId = ?
+        ORDER BY lastHeard DESC
+      `);
+      const nodes = stmt.all(sourceId) as DbNode[];
+      return nodes.map(node => this.normalizeBigInts(node));
+    }
     const stmt = this.db.prepare(`
       SELECT * FROM nodes
       WHERE keyIsLowEntropy = 1 OR duplicateKeyDetected = 1
@@ -2581,7 +2590,7 @@ class DatabaseService {
    * Returns node info with packet counts, sorted by count descending
    * Excludes internal traffic (packets where both from and to are the local node)
    */
-  async getTopBroadcastersAsync(limit: number = 5): Promise<Array<{ nodeNum: number; shortName: string | null; longName: string | null; packetCount: number }>> {
+  async getTopBroadcastersAsync(limit: number = 5, sourceId?: string): Promise<Array<{ nodeNum: number; shortName: string | null; longName: string | null; packetCount: number }>> {
     const oneHourAgo = Date.now() - 3600000;
 
     // Get local node number to exclude internal traffic
@@ -2590,17 +2599,20 @@ class DatabaseService {
 
     if (this.drizzleDbType === 'postgres' && this.postgresPool) {
       try {
-        // Exclude packets where both from_node and to_node are the local node (internal traffic)
+        const sourceClause = sourceId ? `AND p."sourceId" = $4` : '';
+        const params: any[] = [oneHourAgo, limit, localNodeNum || -1];
+        if (sourceId) params.push(sourceId);
         const result = await this.postgresPool.query(`
           SELECT p.from_node as "nodeNum", n."shortName", n."longName", COUNT(*)::int as "packetCount"
           FROM packet_log p
           LEFT JOIN nodes n ON p.from_node = n."nodeNum"
           WHERE p.timestamp >= $1
             AND NOT (p.from_node = $3 AND p.to_node = $3)
+            ${sourceClause}
           GROUP BY p.from_node, n."shortName", n."longName"
           ORDER BY "packetCount" DESC
           LIMIT $2
-        `, [oneHourAgo, limit, localNodeNum || -1]);
+        `, params);
 
         return result.rows;
       } catch (error) {
@@ -2611,16 +2623,21 @@ class DatabaseService {
 
     if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
       try {
+        const sourceClause = sourceId ? `AND p.sourceId = ?` : '';
+        const params: any[] = [oneHourAgo, localNodeNum || -1, localNodeNum || -1];
+        if (sourceId) params.push(sourceId);
+        params.push(limit);
         const [rows] = await this.mysqlPool.query(`
           SELECT p.from_node as nodeNum, n.shortName, n.longName, COUNT(*) as packetCount
           FROM packet_log p
           LEFT JOIN nodes n ON p.from_node = n.nodeNum
           WHERE p.timestamp >= ?
             AND NOT (p.from_node = ? AND p.to_node = ?)
+            ${sourceClause}
           GROUP BY p.from_node, n.shortName, n.longName
           ORDER BY packetCount DESC
           LIMIT ?
-        `, [oneHourAgo, localNodeNum || -1, localNodeNum || -1, limit]) as any;
+        `, params) as any;
 
         return rows.map((row: any) => ({
           nodeNum: Number(row.nodeNum),
@@ -2635,6 +2652,21 @@ class DatabaseService {
     }
 
     // SQLite - exclude packets where both from_node and to_node are the local node
+    if (sourceId) {
+      const stmt = this.db.prepare(`
+        SELECT p.from_node as nodeNum, n.shortName, n.longName, COUNT(*) as packetCount
+        FROM packet_log p
+        LEFT JOIN nodes n ON p.from_node = n.nodeNum
+        WHERE p.timestamp >= ?
+          AND NOT (p.from_node = ? AND p.to_node = ?)
+          AND p.sourceId = ?
+        GROUP BY p.from_node
+        ORDER BY packetCount DESC
+        LIMIT ?
+      `);
+      return stmt.all(oneHourAgo, localNodeNum || -1, localNodeNum || -1, sourceId, limit) as Array<{ nodeNum: number; shortName: string | null; longName: string | null; packetCount: number }>;
+    }
+
     const stmt = this.db.prepare(`
       SELECT p.from_node as nodeNum, n.shortName, n.longName, COUNT(*) as packetCount
       FROM packet_log p
@@ -2750,8 +2782,23 @@ class DatabaseService {
   /**
    * Get all nodes with excessive packet rates (async)
    */
-  async getNodesWithExcessivePacketsAsync(): Promise<DbNode[]> {
-    // Uses cache-based method (no dedicated repo method yet)
+  async getNodesWithExcessivePacketsAsync(sourceId?: string): Promise<DbNode[]> {
+    if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
+      const result: DbNode[] = [];
+      for (const node of this.nodesCache.values()) {
+        if ((node as any).isExcessivePackets) {
+          if (!sourceId || (node as any).sourceId === sourceId) {
+            result.push(node);
+          }
+        }
+      }
+      return result;
+    }
+
+    if (sourceId) {
+      const stmt = this.db.prepare(`SELECT * FROM nodes WHERE isExcessivePackets = 1 AND sourceId = ?`);
+      return stmt.all(sourceId) as DbNode[];
+    }
     return this.getNodesWithExcessivePackets();
   }
 
@@ -2849,8 +2896,23 @@ class DatabaseService {
   /**
    * Get all nodes with time offset issues (async)
    */
-  async getNodesWithTimeOffsetIssuesAsync(): Promise<DbNode[]> {
-    // Uses cache-based method (no dedicated repo method yet)
+  async getNodesWithTimeOffsetIssuesAsync(sourceId?: string): Promise<DbNode[]> {
+    if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
+      const result: DbNode[] = [];
+      for (const node of this.nodesCache.values()) {
+        if ((node as any).isTimeOffsetIssue) {
+          if (!sourceId || (node as any).sourceId === sourceId) {
+            result.push(node);
+          }
+        }
+      }
+      return result;
+    }
+
+    if (sourceId) {
+      const stmt = this.db.prepare(`SELECT * FROM nodes WHERE isTimeOffsetIssue = 1 AND sourceId = ?`);
+      return stmt.all(sourceId) as DbNode[];
+    }
     return this.getNodesWithTimeOffsetIssues();
   }
 
@@ -7789,6 +7851,31 @@ class DatabaseService {
         AND ni.timestamp = latest.maxTimestamp
     `);
     return stmt.all() as DbNeighborInfo[];
+  }
+
+  getLatestNeighborInfoPerNodeScoped(sourceId?: string): DbNeighborInfo[] {
+    if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
+      if (!sourceId) return this._neighborsCache;
+      return this._neighborsCache.filter((ni: any) => ni.sourceId === sourceId);
+    }
+
+    if (!sourceId) return this.getLatestNeighborInfoPerNode();
+
+    const stmt = this.db.prepare(`
+      SELECT ni.*
+      FROM neighbor_info ni
+      INNER JOIN (
+        SELECT nodeNum, neighborNodeNum, MAX(timestamp) as maxTimestamp
+        FROM neighbor_info
+        WHERE sourceId = ?
+        GROUP BY nodeNum, neighborNodeNum
+      ) latest
+      ON ni.nodeNum = latest.nodeNum
+        AND ni.neighborNodeNum = latest.neighborNodeNum
+        AND ni.timestamp = latest.maxTimestamp
+      WHERE ni.sourceId = ?
+    `);
+    return stmt.all(sourceId, sourceId) as DbNeighborInfo[];
   }
 
   /**
