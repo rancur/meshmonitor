@@ -3208,7 +3208,8 @@ apiRouter.post('/import', requireAdmin(), async (req, res) => {
 apiRouter.post('/cleanup/messages', requireAdmin(), async (req, res) => {
   try {
     const days = parseInt(req.body.days) || 30;
-    const deletedCount = await databaseService.cleanupOldMessagesAsync(days);
+    const cleanupSourceId = req.body.sourceId as string | undefined;
+    const deletedCount = await databaseService.cleanupOldMessagesAsync(days, cleanupSourceId);
     res.json({ deletedCount });
   } catch (error) {
     logger.error('Error cleaning up messages:', error);
@@ -3219,7 +3220,8 @@ apiRouter.post('/cleanup/messages', requireAdmin(), async (req, res) => {
 apiRouter.post('/cleanup/nodes', requireAdmin(), async (req, res) => {
   try {
     const days = parseInt(req.body.days) || 30;
-    const deletedCount = await databaseService.cleanupInactiveNodesAsync(days);
+    const cleanupSourceId = req.body.sourceId as string | undefined;
+    const deletedCount = await databaseService.cleanupInactiveNodesAsync(days, cleanupSourceId);
     res.json({ deletedCount });
   } catch (error) {
     logger.error('Error cleaning up nodes:', error);
@@ -3227,9 +3229,10 @@ apiRouter.post('/cleanup/nodes', requireAdmin(), async (req, res) => {
   }
 });
 
-apiRouter.post('/cleanup/channels', requireAdmin(), async (_req, res) => {
+apiRouter.post('/cleanup/channels', requireAdmin(), async (req, res) => {
   try {
-    const deletedCount = await databaseService.cleanupInvalidChannelsAsync();
+    const cleanupSourceId = req.body?.sourceId as string | undefined;
+    const deletedCount = await databaseService.cleanupInvalidChannelsAsync(cleanupSourceId);
     res.json({ deletedCount });
   } catch (error) {
     logger.error('Error cleaning up channels:', error);

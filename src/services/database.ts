@@ -10352,7 +10352,22 @@ class DatabaseService {
   // ============================================================
 
   // Group 1: Cleanup/Maintenance
-  async cleanupOldMessagesAsync(days: number = 30): Promise<number> {
+  async cleanupOldMessagesAsync(days: number = 30, sourceId?: string): Promise<number> {
+    if (sourceId) {
+      if (this.drizzleDbType === 'postgres' && this.postgresPool) {
+        const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+        const result = await this.postgresPool.query(`DELETE FROM messages WHERE timestamp < $1 AND "sourceId" = $2`, [cutoff, sourceId]);
+        return result.rowCount ?? 0;
+      }
+      if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
+        const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+        const [result] = await this.mysqlPool.query(`DELETE FROM messages WHERE timestamp < ? AND sourceId = ?`, [cutoff, sourceId]) as any;
+        return result.affectedRows ?? 0;
+      }
+      const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+      const stmt = this.db.prepare('DELETE FROM messages WHERE timestamp < ? AND sourceId = ?');
+      return Number(stmt.run(cutoff, sourceId).changes);
+    }
     return this.cleanupOldMessages(days);
   }
 
@@ -10377,11 +10392,43 @@ class DatabaseService {
     return this.cleanupOldNeighborInfo(days);
   }
 
-  async cleanupInactiveNodesAsync(days: number = 30): Promise<number> {
+  async cleanupInactiveNodesAsync(days: number = 30, sourceId?: string): Promise<number> {
+    if (sourceId) {
+      const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+      if (this.drizzleDbType === 'postgres' && this.postgresPool) {
+        const result = await this.postgresPool.query(`DELETE FROM nodes WHERE "lastHeard" < $1 AND "sourceId" = $2`, [cutoff, sourceId]);
+        return result.rowCount ?? 0;
+      }
+      if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
+        const [result] = await this.mysqlPool.query(`DELETE FROM nodes WHERE lastHeard < ? AND sourceId = ?`, [cutoff, sourceId]) as any;
+        return result.affectedRows ?? 0;
+      }
+      const stmt = this.db.prepare('DELETE FROM nodes WHERE lastHeard < ? AND sourceId = ?');
+      return Number(stmt.run(cutoff, sourceId).changes);
+    }
     return this.cleanupInactiveNodes(days);
   }
 
-  async cleanupInvalidChannelsAsync(): Promise<number> {
+  async cleanupInvalidChannelsAsync(sourceId?: string): Promise<number> {
+    if (sourceId) {
+      // Channels with no name and no PSK scoped to a source
+      if (this.drizzleDbType === 'postgres' && this.postgresPool) {
+        const result = await this.postgresPool.query(
+          `DELETE FROM channels WHERE ("name" IS NULL OR "name" = '') AND ("psk" IS NULL OR "psk" = '') AND "sourceId" = $1`,
+          [sourceId]
+        );
+        return result.rowCount ?? 0;
+      }
+      if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
+        const [result] = await this.mysqlPool.query(
+          `DELETE FROM channels WHERE (name IS NULL OR name = '') AND (psk IS NULL OR psk = '') AND sourceId = ?`,
+          [sourceId]
+        ) as any;
+        return result.affectedRows ?? 0;
+      }
+      const stmt = this.db.prepare(`DELETE FROM channels WHERE (name IS NULL OR name = '') AND (psk IS NULL OR psk = '') AND sourceId = ?`);
+      return Number(stmt.run(sourceId).changes);
+    }
     return this.cleanupInvalidChannels();
   }
 
