@@ -4259,10 +4259,22 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
     const localNodeInfo = activeManager.getLocalNodeInfo();
     const allMemoryNodes = await activeManager.getAllNodesAsync(pollSourceId);
     const filteredMemoryNodes = await filterNodesByChannelPermission(allMemoryNodes, user);
-    const hasChannelsRead = req.user?.isAdmin || await hasPermission(req.user!, 'channel_0', 'read');
-    const hasMessagesRead = req.user?.isAdmin || await hasPermission(req.user!, 'messages', 'read');
-    const hasInfoRead = req.user?.isAdmin || await hasPermission(req.user!, 'info', 'read');
-    const canViewPrivate = user ? await hasPermission(user, 'nodes_private', 'read') : false;
+
+    // Load full permission set once to avoid N sequential DB queries per permission check
+    const userPermissionSet = (user && !user.isAdmin && userId)
+      ? await databaseService.getUserPermissionSetAsync(userId, pollSourceId)
+      : null;
+    // In-memory permission check using the pre-loaded permission set
+    const checkPerm = (resource: string, action: 'read' | 'write'): boolean => {
+      if (!user) return false;
+      if (user.isAdmin) return true;
+      return (userPermissionSet as Record<string, { read: boolean; write: boolean }> | null)?.[resource]?.[action] ?? false;
+    };
+
+    const hasChannelsRead = checkPerm('channel_0', 'read');
+    const hasMessagesRead = checkPerm('messages', 'read');
+    const hasInfoRead = checkPerm('info', 'read');
+    const canViewPrivate = checkPerm('nodes_private', 'read');
 
     // 1. Connection status (always available)
     try {
@@ -4322,7 +4334,7 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
       for (const [channelIdStr, count] of Object.entries(allUnreadChannels)) {
         const channelId = parseInt(channelIdStr);
         const channelResource = `channel_${channelId}` as import('../types/permission.js').ResourceType;
-        const hasChannelRead = req.user?.isAdmin || await hasPermission(req.user!, channelResource, 'read');
+        const hasChannelRead = checkPerm(channelResource, 'read');
 
         if (hasChannelRead) {
           filteredUnreadChannels[channelId] = count;
@@ -4362,7 +4374,7 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
 
         // Check per-channel read permission
         const channelResource = `channel_${channel.id}` as import('../types/permission.js').ResourceType;
-        const hasChannelRead = req.user?.isAdmin || await hasPermission(req.user!, channelResource, 'read');
+        const hasChannelRead = checkPerm(channelResource, 'read');
 
         if (!hasChannelRead) {
           continue; // User doesn't have permission to see this channel

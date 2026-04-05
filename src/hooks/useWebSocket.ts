@@ -192,7 +192,7 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
     const socket = io(socketUrl, {
       path: socketPath,
       withCredentials: true,
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
