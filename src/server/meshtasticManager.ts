@@ -5478,7 +5478,7 @@ class MeshtasticManager implements ISourceManager {
 
         if (originalMessage) {
           const targetNodeId = originalMessage.toNodeId;
-          const localNodeId = await databaseService.settings.getSetting('localNodeId');
+          const localNodeId = this.localNodeInfo?.nodeId ?? await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
           const isDM = originalMessage.channel === -1;
 
           // ACK from our own radio - message transmitted to mesh
@@ -5538,7 +5538,7 @@ class MeshtasticManager implements ISourceManager {
         // No message record found — could be a NodeInfo/telemetry/position request that
         // isn't stored in the messages table. Still check for key mismatch errors using
         // the packet's destination field.
-        const localNodeId = await databaseService.settings.getSetting('localNodeId');
+        const localNodeId = this.localNodeInfo?.nodeId ?? await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
         const toNum = meshPacket.to ? Number(meshPacket.to) : null;
 
         if (toNum && toNum !== 0xFFFFFFFF) {
@@ -5589,7 +5589,7 @@ class MeshtasticManager implements ISourceManager {
       }
 
       const targetNodeId = originalMessage.toNodeId;
-      const localNodeId = await databaseService.settings.getSetting('localNodeId');
+      const localNodeId = this.localNodeInfo?.nodeId ?? await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
       const isDM = originalMessage.channel === -1;
 
       // Detect PKI/encryption errors and flag the target node
@@ -6508,15 +6508,16 @@ class MeshtasticManager implements ISourceManager {
       );
 
       // Save sent message to database for UI display
-      // Try database settings first, then fall back to this.localNodeInfo
-      let localNodeNum = await databaseService.settings.getSetting('localNodeNum');
-      let localNodeId = await databaseService.settings.getSetting('localNodeId');
+      // Prefer this.localNodeInfo (populated from MyNodeInfo), fall back to source-scoped settings
+      let localNodeNum: string | null = this.localNodeInfo?.nodeNum?.toString() ?? null;
+      let localNodeId: string | null = this.localNodeInfo?.nodeId ?? null;
 
-      // Fallback to this.localNodeInfo if settings aren't available
-      if (!localNodeNum && this.localNodeInfo) {
-        localNodeNum = this.localNodeInfo.nodeNum.toString();
-        localNodeId = this.localNodeInfo.nodeId;
-        logger.debug(`Using localNodeInfo as fallback: ${localNodeId}`);
+      if (!localNodeNum || !localNodeId) {
+        localNodeNum = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
+        localNodeId = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
+        if (localNodeNum && localNodeId) {
+          logger.debug(`Using source-scoped settings as fallback: ${localNodeId}`);
+        }
       }
 
       if (localNodeNum && localNodeId) {
@@ -7043,7 +7044,7 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Skip messages from our own locally connected node
-      const localNodeNum = await databaseService.settings.getSetting('localNodeNum');
+      const localNodeNum = this.localNodeInfo?.nodeNum?.toString() ?? await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
       if (localNodeNum && parseInt(localNodeNum) === message.fromNodeNum) {
         logger.debug('⏭️  Skipping push notification for message from local node');
         return;
@@ -7158,7 +7159,7 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Skip messages from our own locally connected node
-      const localNodeNum = await databaseService.settings.getSetting('localNodeNum');
+      const localNodeNum = this.localNodeInfo?.nodeNum?.toString() ?? await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
       if (localNodeNum && parseInt(localNodeNum) === fromNum) {
         logger.debug('⏭️  Skipping auto-acknowledge for message from local node');
         return;
@@ -7759,7 +7760,7 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Skip messages from our own locally connected node
-      const localNodeNum = await databaseService.settings.getSetting('localNodeNum');
+      const localNodeNum = this.localNodeInfo?.nodeNum?.toString() ?? await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
       if (localNodeNum && parseInt(localNodeNum) === message.fromNodeNum) {
         logger.debug('⏭️  Skipping auto-responder for message from local node');
         return;
