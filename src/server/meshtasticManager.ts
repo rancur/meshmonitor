@@ -713,32 +713,6 @@ class MeshtasticManager implements ISourceManager {
       // Note: With TCP, we don't need to poll - messages arrive via events
       // The configuration will come in automatically as the node sends it
 
-      // Explicitly request LoRa config (config type 5) for Configuration tab
-      // Give the device a moment to process want_config_id first
-      setTimeout(async () => {
-        try {
-          logger.info('📡 Requesting LoRa config from device...');
-          await this.requestConfig(5); // LORA_CONFIG = 5
-        } catch (error) {
-          logger.error('❌ Failed to request LoRa config:', error);
-        }
-      }, 2000);
-
-      // Request all module configs for complete device backup capability (skip on reconnect)
-      if (!this.moduleConfigsEverFetched) {
-        setTimeout(async () => {
-          try {
-            logger.info('📦 Requesting all module configs for backup...');
-            await this.requestAllModuleConfigs();
-            this.moduleConfigsEverFetched = true;
-          } catch (error) {
-            logger.error('❌ Failed to request all module configs:', error);
-          }
-        }, 3000); // Start after LoRa config request
-      } else {
-        logger.info('📦 Skipping module config request on reconnect (already fetched this session)');
-      }
-
       // Register a one-time callback to start schedulers AFTER the device
       // finishes sending its config (configComplete event). This prevents
       // flooding the device with outbound requests while it's still streaming
@@ -780,6 +754,33 @@ class MeshtasticManager implements ISourceManager {
         // Start auto key repair scheduler
         setTimeout(() => this.startKeyRepairScheduler(), S * 8);
 
+        // Request LoRa config (config type 5) for Configuration tab — deferred
+        // until after configComplete so we don't flood the device mid-exchange.
+        // This is safe for serial-bridge connections that reject mid-exchange admin msgs.
+        setTimeout(async () => {
+          try {
+            logger.info('📡 Requesting LoRa config from device...');
+            await this.requestConfig(5); // LORA_CONFIG = 5
+          } catch (error) {
+            logger.error('❌ Failed to request LoRa config:', error);
+          }
+        }, S * 9);
+
+        // Request all module configs for complete device backup capability (skip on reconnect)
+        if (!this.moduleConfigsEverFetched) {
+          setTimeout(async () => {
+            try {
+              logger.info('📦 Requesting all module configs for backup...');
+              await this.requestAllModuleConfigs();
+              this.moduleConfigsEverFetched = true;
+            } catch (error) {
+              logger.error('❌ Failed to request all module configs:', error);
+            }
+          }, S * 10);
+        } else {
+          logger.info('📦 Skipping module config request on reconnect (already fetched this session)');
+        }
+
         // Auto-favorite staleness sweep - runs every 60 minutes
         setInterval(() => {
           this.autoFavoriteSweep().catch(error => {
@@ -792,9 +793,9 @@ class MeshtasticManager implements ISourceManager {
           this.autoFavoriteSweep().catch(error => {
             logger.error('❌ Error in initial auto-favorite sweep:', error);
           });
-        }, S * 9);
+        }, S * 11);
 
-        logger.info(`✅ Config capture complete — schedulers will start over the next ${(S * 9) / 1000} seconds`);
+        logger.info(`✅ Config capture complete — schedulers will start over the next ${(S * 11) / 1000} seconds`);
       };
 
       // Fallback: if configComplete never arrives (device disconnects mid-config),
