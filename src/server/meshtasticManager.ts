@@ -2956,8 +2956,13 @@ class MeshtasticManager implements ISourceManager {
       logger.debug('📱 Checking for local node info in database...');
 
       // Try to load previously saved local node info from settings
-      const savedNodeNum = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
-      const savedNodeId = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
+      // Check scoped key first, then legacy global key (backward compat for existing sessions)
+      let savedNodeNum = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeNum'));
+      let savedNodeId = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
+      if (!savedNodeNum || !savedNodeId) {
+        savedNodeNum = await databaseService.settings.getSetting('localNodeNum');
+        savedNodeId = await databaseService.settings.getSetting('localNodeId');
+      }
 
       if (savedNodeNum && savedNodeId) {
         const nodeNum = parseInt(savedNodeNum);
@@ -6508,7 +6513,8 @@ class MeshtasticManager implements ISourceManager {
       );
 
       // Save sent message to database for UI display
-      // Prefer this.localNodeInfo (populated from MyNodeInfo), fall back to source-scoped settings
+      // Prefer this.localNodeInfo (populated from MyNodeInfo), fall back to source-scoped settings,
+      // then fall back to legacy global key (single-source compatibility or pre-existing sessions)
       let localNodeNum: string | null = this.localNodeInfo?.nodeNum?.toString() ?? null;
       let localNodeId: string | null = this.localNodeInfo?.nodeId ?? null;
 
@@ -6517,6 +6523,13 @@ class MeshtasticManager implements ISourceManager {
         localNodeId = await databaseService.settings.getSetting(this.localNodeSettingKey('localNodeId'));
         if (localNodeNum && localNodeId) {
           logger.debug(`Using source-scoped settings as fallback: ${localNodeId}`);
+        } else {
+          // Legacy fallback: global key (single-source installs or pre-existing sessions)
+          localNodeNum = await databaseService.settings.getSetting('localNodeNum');
+          localNodeId = await databaseService.settings.getSetting('localNodeId');
+          if (localNodeNum && localNodeId) {
+            logger.debug(`Using legacy global settings as fallback: ${localNodeId}`);
+          }
         }
       }
 
