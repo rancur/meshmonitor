@@ -197,10 +197,12 @@ router.get('/:id/nodes', requirePermission('nodes', 'read'), async (req: Request
     const source = await databaseService.sources.getSource(req.params.id);
     if (!source) return res.status(404).json({ error: 'Source not found' });
 
-    const nodes = await databaseService.nodes.getAllNodes(source.id);
+    // Nodes are globally unique by nodeId (DB constraint) — don't filter by sourceId.
+    // A node first seen by Source 1 has sourceId='source1' but is still on Source 2's mesh.
+    const nodes = await databaseService.nodes.getAllNodes();
 
-    // The local node for this source may be stored under a different sourceId in the DB
-    // (e.g. another source saw it first). Always include the manager's local node if absent.
+    // The local node for this source may not be in DB yet (brand new device).
+    // Always include the manager's local node if absent.
     const manager = sourceManagerRegistry.getManager(source.id);
     if (manager) {
       const localNodeInfo = manager.getLocalNodeInfo();
