@@ -1141,7 +1141,7 @@ class MeshtasticManager implements ISourceManager {
 
     // Load setting from database if not already set
     if (this.remoteAdminScannerIntervalMinutes === 0) {
-      const savedInterval = await databaseService.settings.getSetting('remoteAdminScannerIntervalMinutes');
+      const savedInterval = await databaseService.settings.getSettingForSource(this.sourceId, 'remoteAdminScannerIntervalMinutes');
       if (savedInterval) {
         this.remoteAdminScannerIntervalMinutes = parseInt(savedInterval, 10) || 0;
       }
@@ -1692,7 +1692,7 @@ class MeshtasticManager implements ISourceManager {
     }
 
     // Check if auto-announce is enabled
-    const autoAnnounceEnabled = await databaseService.settings.getSetting('autoAnnounceEnabled');
+    const autoAnnounceEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoAnnounceEnabled');
     if (autoAnnounceEnabled !== 'true') {
       logger.debug('📢 Auto-announce is disabled');
       return;
@@ -1823,7 +1823,7 @@ class MeshtasticManager implements ISourceManager {
     this.timerCronJobs.clear();
 
     // Load timer triggers from settings
-    const timerTriggersJson = await databaseService.settings.getSetting('timerTriggers');
+    const timerTriggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'timerTriggers');
     if (!timerTriggersJson) {
       logger.debug('⏱️ No timer triggers configured');
       return;
@@ -1916,7 +1916,7 @@ class MeshtasticManager implements ISourceManager {
     // Load persisted cooldowns from database (async, populate in background)
     this.loadGeofenceCooldowns();
 
-    const triggersJson = await databaseService.settings.getSetting('geofenceTriggers');
+    const triggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'geofenceTriggers');
     if (!triggersJson) {
       logger.debug('📍 No geofence triggers configured');
       return;
@@ -2031,7 +2031,7 @@ class MeshtasticManager implements ISourceManager {
    * Fires entry/exit events based on state transitions.
    */
   private async checkGeofencesForNode(nodeNum: number, lat: number, lng: number): Promise<void> {
-    const triggersJson = await databaseService.settings.getSetting('geofenceTriggers');
+    const triggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'geofenceTriggers');
     if (!triggersJson) return;
 
     let triggers: GeofenceTriggerConfig[];
@@ -2349,7 +2349,7 @@ class MeshtasticManager implements ISourceManager {
    */
   private async updateGeofenceTriggerResult(triggerId: string, result: 'success' | 'error', errorMessage?: string): Promise<void> {
     try {
-      const triggersJson = await databaseService.settings.getSetting('geofenceTriggers');
+      const triggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'geofenceTriggers');
       if (!triggersJson) return;
 
       const triggers = JSON.parse(triggersJson);
@@ -2594,7 +2594,7 @@ class MeshtasticManager implements ISourceManager {
    */
   private async updateTimerTriggerResult(triggerId: string, result: 'success' | 'error', errorMessage?: string): Promise<void> {
     try {
-      const timerTriggersJson = await databaseService.settings.getSetting('timerTriggers');
+      const timerTriggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'timerTriggers');
       if (!timerTriggersJson) return;
 
       const timerTriggers = JSON.parse(timerTriggersJson);
@@ -7122,7 +7122,7 @@ class MeshtasticManager implements ISourceManager {
   private async checkAutoAcknowledge(message: any, messageText: string, channelIndex: number, isDirectMessage: boolean, fromNum: number, packetId?: number, rxSnr?: number, rxRssi?: number): Promise<void> {
     try {
       // Get auto-acknowledge settings from database
-      const autoAckEnabled = await databaseService.settings.getSetting('autoAckEnabled');
+      const autoAckEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoAckEnabled');
       const autoAckRegex = await databaseService.settings.getSetting('autoAckRegex');
 
       // Skip if auto-acknowledge is disabled
@@ -7428,8 +7428,8 @@ class MeshtasticManager implements ISourceManager {
 
     if (!pingStartMatch && !pingStopMatch) return false;
 
-    // Check if auto-ping is enabled
-    const autoPingEnabled = await databaseService.settings.getSetting('autoPingEnabled');
+    // Check if auto-ping is enabled (per-source override beats global)
+    const autoPingEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoPingEnabled');
     if (autoPingEnabled !== 'true') {
       logger.debug('⏭️  Auto-ping command received but feature is disabled');
       return false;
@@ -7453,8 +7453,8 @@ class MeshtasticManager implements ISourceManager {
 
     if (pingStartMatch) {
       const count = parseInt(pingStartMatch[1], 10);
-      const maxPings = parseInt(await databaseService.settings.getSetting('autoPingMaxPings') || '20', 10);
-      const intervalSeconds = parseInt(await databaseService.settings.getSetting('autoPingIntervalSeconds') || '30', 10);
+      const maxPings = parseInt((await databaseService.settings.getSettingForSource(this.sourceId, 'autoPingMaxPings')) || '20', 10);
+      const intervalSeconds = parseInt((await databaseService.settings.getSettingForSource(this.sourceId, 'autoPingIntervalSeconds')) || '30', 10);
 
       // Validate count
       if (count <= 0) {
@@ -7548,7 +7548,7 @@ class MeshtasticManager implements ISourceManager {
       logger.debug(`📡 Auto-ping ${pingNum}/${session.totalPings} sent to !${session.requestedBy.toString(16).padStart(8, '0')} (requestId: ${requestId})`);
 
       // Set timeout for this ping
-      const timeoutSeconds = parseInt(await databaseService.settings.getSetting('autoPingTimeoutSeconds') || '60', 10);
+      const timeoutSeconds = parseInt((await databaseService.settings.getSettingForSource(this.sourceId, 'autoPingTimeoutSeconds')) || '60', 10);
       session.pendingTimeout = setTimeout(() => {
         this.handleAutoPingTimeout(session);
       }, timeoutSeconds * 1000);
@@ -7766,7 +7766,7 @@ class MeshtasticManager implements ISourceManager {
   private async checkAutoResponder(message: TextMessage, isDirectMessage: boolean, packetId?: number): Promise<void> {
     try {
       // Get auto-responder settings from database
-      const autoResponderEnabled = await databaseService.settings.getSetting('autoResponderEnabled');
+      const autoResponderEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoResponderEnabled');
 
       // Skip if auto-responder is disabled
       if (autoResponderEnabled !== 'true') {
@@ -8687,7 +8687,7 @@ class MeshtasticManager implements ISourceManager {
 
     try {
       // Get auto-welcome settings from database
-      const autoWelcomeEnabled = await databaseService.settings.getSetting('autoWelcomeEnabled');
+      const autoWelcomeEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoWelcomeEnabled');
 
       // Skip if auto-welcome is disabled
       if (autoWelcomeEnabled !== 'true') {
@@ -9099,49 +9099,49 @@ class MeshtasticManager implements ISourceManager {
       const features: string[] = [];
 
       // Check traceroute
-      const tracerouteInterval = await databaseService.settings.getSetting('tracerouteIntervalMinutes');
+      const tracerouteInterval = await databaseService.settings.getSettingForSource(this.sourceId, 'tracerouteIntervalMinutes');
       if (tracerouteInterval && parseInt(tracerouteInterval) > 0) {
         features.push('🗺️');
       }
 
       // Check auto-ack
-      const autoAckEnabled = await databaseService.settings.getSetting('autoAckEnabled');
+      const autoAckEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoAckEnabled');
       if (autoAckEnabled === 'true') {
         features.push('🤖');
       }
 
       // Check auto-announce
-      const autoAnnounceEnabled = await databaseService.settings.getSetting('autoAnnounceEnabled');
+      const autoAnnounceEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoAnnounceEnabled');
       if (autoAnnounceEnabled === 'true') {
         features.push('📢');
       }
 
       // Check auto-welcome
-      const autoWelcomeEnabled = await databaseService.settings.getSetting('autoWelcomeEnabled');
+      const autoWelcomeEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoWelcomeEnabled');
       if (autoWelcomeEnabled === 'true') {
         features.push('👋');
       }
 
       // Check auto-ping
-      const autoPingEnabled = await databaseService.settings.getSetting('autoPingEnabled');
+      const autoPingEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoPingEnabled');
       if (autoPingEnabled === 'true') {
         features.push('🏓');
       }
 
       // Check auto-key management
-      const autoKeyManagementEnabled = await databaseService.settings.getSetting('autoKeyManagementEnabled');
+      const autoKeyManagementEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoKeyManagementEnabled');
       if (autoKeyManagementEnabled === 'true') {
         features.push('🔑');
       }
 
       // Check auto-responder
-      const autoResponderEnabled = await databaseService.settings.getSetting('autoResponderEnabled');
+      const autoResponderEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoResponderEnabled');
       if (autoResponderEnabled === 'true') {
         features.push('💬');
       }
 
       // Check timed triggers (any enabled trigger)
-      const timerTriggersJson = await databaseService.settings.getSetting('timerTriggers');
+      const timerTriggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'timerTriggers');
       if (timerTriggersJson) {
         try {
           const triggers = JSON.parse(timerTriggersJson);
@@ -9152,7 +9152,7 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Check geofence triggers (any enabled trigger)
-      const geofenceTriggersJson = await databaseService.settings.getSetting('geofenceTriggers');
+      const geofenceTriggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'geofenceTriggers');
       if (geofenceTriggersJson) {
         try {
           const triggers = JSON.parse(geofenceTriggersJson);
@@ -9163,13 +9163,13 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Check remote admin scan
-      const remoteAdminInterval = await databaseService.settings.getSetting('remoteAdminScannerIntervalMinutes');
+      const remoteAdminInterval = await databaseService.settings.getSettingForSource(this.sourceId, 'remoteAdminScannerIntervalMinutes');
       if (remoteAdminInterval && parseInt(remoteAdminInterval) > 0) {
         features.push('🔍');
       }
 
       // Check auto time sync
-      const autoTimeSyncEnabled = await databaseService.settings.getSetting('autoTimeSyncEnabled');
+      const autoTimeSyncEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoTimeSyncEnabled');
       if (autoTimeSyncEnabled === 'true') {
         features.push('🕐');
       }
@@ -9351,49 +9351,49 @@ class MeshtasticManager implements ISourceManager {
       const features: string[] = [];
 
       // Check traceroute
-      const tracerouteInterval = await databaseService.settings.getSetting('tracerouteIntervalMinutes');
+      const tracerouteInterval = await databaseService.settings.getSettingForSource(this.sourceId, 'tracerouteIntervalMinutes');
       if (tracerouteInterval && parseInt(tracerouteInterval) > 0) {
         features.push('🗺️');
       }
 
       // Check auto-ack
-      const autoAckEnabled = await databaseService.settings.getSetting('autoAckEnabled');
+      const autoAckEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoAckEnabled');
       if (autoAckEnabled === 'true') {
         features.push('🤖');
       }
 
       // Check auto-announce
-      const autoAnnounceEnabled = await databaseService.settings.getSetting('autoAnnounceEnabled');
+      const autoAnnounceEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoAnnounceEnabled');
       if (autoAnnounceEnabled === 'true') {
         features.push('📢');
       }
 
       // Check auto-welcome
-      const autoWelcomeEnabled = await databaseService.settings.getSetting('autoWelcomeEnabled');
+      const autoWelcomeEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoWelcomeEnabled');
       if (autoWelcomeEnabled === 'true') {
         features.push('👋');
       }
 
       // Check auto-ping
-      const autoPingEnabled = await databaseService.settings.getSetting('autoPingEnabled');
+      const autoPingEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoPingEnabled');
       if (autoPingEnabled === 'true') {
         features.push('🏓');
       }
 
       // Check auto-key management
-      const autoKeyManagementEnabled = await databaseService.settings.getSetting('autoKeyManagementEnabled');
+      const autoKeyManagementEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoKeyManagementEnabled');
       if (autoKeyManagementEnabled === 'true') {
         features.push('🔑');
       }
 
       // Check auto-responder
-      const autoResponderEnabled = await databaseService.settings.getSetting('autoResponderEnabled');
+      const autoResponderEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoResponderEnabled');
       if (autoResponderEnabled === 'true') {
         features.push('💬');
       }
 
       // Check timed triggers (any enabled trigger)
-      const timerTriggersJson = await databaseService.settings.getSetting('timerTriggers');
+      const timerTriggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'timerTriggers');
       if (timerTriggersJson) {
         try {
           const triggers = JSON.parse(timerTriggersJson);
@@ -9404,7 +9404,7 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Check geofence triggers (any enabled trigger)
-      const geofenceTriggersJson = await databaseService.settings.getSetting('geofenceTriggers');
+      const geofenceTriggersJson = await databaseService.settings.getSettingForSource(this.sourceId, 'geofenceTriggers');
       if (geofenceTriggersJson) {
         try {
           const triggers = JSON.parse(geofenceTriggersJson);
@@ -9415,13 +9415,13 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Check remote admin scan
-      const remoteAdminInterval = await databaseService.settings.getSetting('remoteAdminScannerIntervalMinutes');
+      const remoteAdminInterval = await databaseService.settings.getSettingForSource(this.sourceId, 'remoteAdminScannerIntervalMinutes');
       if (remoteAdminInterval && parseInt(remoteAdminInterval) > 0) {
         features.push('🔍');
       }
 
       // Check auto time sync
-      const autoTimeSyncEnabled = await databaseService.settings.getSetting('autoTimeSyncEnabled');
+      const autoTimeSyncEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'autoTimeSyncEnabled');
       if (autoTimeSyncEnabled === 'true') {
         features.push('🕐');
       }

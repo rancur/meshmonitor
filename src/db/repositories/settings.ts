@@ -188,6 +188,19 @@ export class SettingsRepository extends BaseRepository {
   }
 
   /**
+   * Get a setting for a specific source, falling back to the global value when
+   * no per-source override exists. Pass `null`/`undefined` for sourceId to get
+   * the plain global setting.
+   */
+  async getSettingForSource(sourceId: string | null | undefined, key: string): Promise<string | null> {
+    if (sourceId) {
+      const prefixed = await this.getSetting(`${this.sourcePrefix(sourceId)}${key}`);
+      if (prefixed !== null && prefixed !== undefined) return prefixed;
+    }
+    return await this.getSetting(key);
+  }
+
+  /**
    * Set a single per-source setting
    */
   async setSourceSetting(sourceId: string, key: string, value: string): Promise<void> {

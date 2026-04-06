@@ -5588,11 +5588,19 @@ apiRouter.get('/settings/auto-ping', requirePermission('settings', 'read'), asyn
   try {
     const autoPingSourceId = req.query.sourceId as string | undefined;
     const autoPingManager = autoPingSourceId ? (sourceManagerRegistry.getManager(autoPingSourceId) as typeof meshtasticManager ?? meshtasticManager) : meshtasticManager;
+    // Per-source settings layered on top of globals (source override wins)
+    const sourceOverrides = autoPingSourceId
+      ? await databaseService.settings.getSourceSettings(autoPingSourceId)
+      : {};
+    const readSetting = async (key: string): Promise<string | null> => {
+      if (key in sourceOverrides) return sourceOverrides[key];
+      return await databaseService.settings.getSetting(key);
+    };
     const settings = {
-      autoPingEnabled: await databaseService.settings.getSetting('autoPingEnabled') === 'true',
-      autoPingIntervalSeconds: parseInt(await databaseService.settings.getSetting('autoPingIntervalSeconds') || '30', 10),
-      autoPingMaxPings: parseInt(await databaseService.settings.getSetting('autoPingMaxPings') || '20', 10),
-      autoPingTimeoutSeconds: parseInt(await databaseService.settings.getSetting('autoPingTimeoutSeconds') || '60', 10),
+      autoPingEnabled: (await readSetting('autoPingEnabled')) === 'true',
+      autoPingIntervalSeconds: parseInt((await readSetting('autoPingIntervalSeconds')) || '30', 10),
+      autoPingMaxPings: parseInt((await readSetting('autoPingMaxPings')) || '20', 10),
+      autoPingTimeoutSeconds: parseInt((await readSetting('autoPingTimeoutSeconds')) || '60', 10),
     };
     const sessions = await autoPingManager.getAutoPingSessions();
     res.json({ settings, sessions });
@@ -5606,37 +5614,56 @@ apiRouter.get('/settings/auto-ping', requirePermission('settings', 'read'), asyn
 apiRouter.post('/settings/auto-ping', requirePermission('settings', 'write'), async (req, res) => {
   try {
     const { autoPingEnabled, autoPingIntervalSeconds, autoPingMaxPings, autoPingTimeoutSeconds } = req.body;
+    const autoPingSourceId = req.query.sourceId as string | undefined;
+    const writeSetting = async (key: string, value: string) => {
+      if (autoPingSourceId) {
+        await databaseService.settings.setSourceSetting(autoPingSourceId, key, value);
+      } else {
+        await databaseService.settings.setSetting(key, value);
+      }
+    };
+    const sourceOverrides = autoPingSourceId
+      ? await databaseService.settings.getSourceSettings(autoPingSourceId)
+      : {};
+    const readSetting = async (key: string): Promise<string | null> => {
+      if (key in sourceOverrides) return sourceOverrides[key];
+      return await databaseService.settings.getSetting(key);
+    };
 
     if (autoPingEnabled !== undefined) {
-      await databaseService.settings.setSetting('autoPingEnabled', String(autoPingEnabled));
+      await writeSetting('autoPingEnabled', String(autoPingEnabled));
+      sourceOverrides['autoPingEnabled'] = String(autoPingEnabled);
     }
     if (autoPingIntervalSeconds !== undefined) {
       const val = parseInt(String(autoPingIntervalSeconds), 10);
       if (isNaN(val) || val < 10) {
         return res.status(400).json({ error: 'Interval must be at least 10 seconds.' });
       }
-      await databaseService.settings.setSetting('autoPingIntervalSeconds', String(val));
+      await writeSetting('autoPingIntervalSeconds', String(val));
+      sourceOverrides['autoPingIntervalSeconds'] = String(val);
     }
     if (autoPingMaxPings !== undefined) {
       const val = parseInt(String(autoPingMaxPings), 10);
       if (isNaN(val) || val < 1 || val > 100) {
         return res.status(400).json({ error: 'Max pings must be between 1 and 100.' });
       }
-      await databaseService.settings.setSetting('autoPingMaxPings', String(val));
+      await writeSetting('autoPingMaxPings', String(val));
+      sourceOverrides['autoPingMaxPings'] = String(val);
     }
     if (autoPingTimeoutSeconds !== undefined) {
       const val = parseInt(String(autoPingTimeoutSeconds), 10);
       if (isNaN(val) || val < 10) {
         return res.status(400).json({ error: 'Timeout must be at least 10 seconds.' });
       }
-      await databaseService.settings.setSetting('autoPingTimeoutSeconds', String(val));
+      await writeSetting('autoPingTimeoutSeconds', String(val));
+      sourceOverrides['autoPingTimeoutSeconds'] = String(val);
     }
 
     const settings = {
-      autoPingEnabled: await databaseService.settings.getSetting('autoPingEnabled') === 'true',
-      autoPingIntervalSeconds: parseInt(await databaseService.settings.getSetting('autoPingIntervalSeconds') || '30', 10),
-      autoPingMaxPings: parseInt(await databaseService.settings.getSetting('autoPingMaxPings') || '20', 10),
-      autoPingTimeoutSeconds: parseInt(await databaseService.settings.getSetting('autoPingTimeoutSeconds') || '60', 10),
+      autoPingEnabled: (await readSetting('autoPingEnabled')) === 'true',
+      autoPingIntervalSeconds: parseInt((await readSetting('autoPingIntervalSeconds')) || '30', 10),
+      autoPingMaxPings: parseInt((await readSetting('autoPingMaxPings')) || '20', 10),
+      autoPingTimeoutSeconds: parseInt((await readSetting('autoPingTimeoutSeconds')) || '60', 10),
     };
 
     res.json({ success: true, settings });
