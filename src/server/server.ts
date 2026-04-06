@@ -4259,9 +4259,8 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
     const localNodeInfo = activeManager.getLocalNodeInfo();
     // Nodes are globally unique by nodeId (DB constraint) — don't filter by sourceId.
     // A node first seen by Source 1 has sourceId='source1' but is still visible on Source 2's mesh.
-    // Messages use insertIgnore with a globally unique ID (fromNum_packetId). Whichever source
-    // receives a packet first "wins" the sourceId. To ensure cross-source visibility, messages
-    // are also fetched globally (no sourceId filter) — same as nodes.
+    // Messages and channels are source-scoped; the node registry is shared.
+    // NOTE: Cross-source message visibility requires a schema change (composite PK) — see MES-15.
     const allMemoryNodes = await activeManager.getAllNodesAsync();
     const filteredMemoryNodes = await filterNodesByChannelPermission(allMemoryNodes, user);
 
@@ -4308,10 +4307,7 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
     // 3. Messages (requires any channel permission OR messages permission)
     try {
       if (hasChannelsRead || hasMessagesRead) {
-        // Fetch messages without sourceId filter — messages are globally unique by (fromNum, packetId)
-        // and whichever source first receives a packet stores it. Cross-source visibility is needed
-        // so Source 1 can see messages that Source 2's radio received first (and vice versa).
-        let messages = await activeManager.getRecentMessages(100);
+        let messages = await activeManager.getRecentMessages(100, pollSourceId);
 
         // Filter messages based on permissions
         if (hasChannelsRead && !hasMessagesRead) {
