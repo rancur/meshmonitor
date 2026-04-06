@@ -276,7 +276,9 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [enabled, queryClient, sourceId, pollKey, updateNodeInCache, addMessageToCache, updateConnectionInCache, updateChannelInCache]);
+  // pollKey is derived from sourceId (primitive) — omit it here to avoid a new array
+  // reference on every render triggering socket reconnects.
+  }, [enabled, queryClient, sourceId, updateNodeInCache, addMessageToCache, updateConnectionInCache, updateChannelInCache]);
 
   return state;
 }
