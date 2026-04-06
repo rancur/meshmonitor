@@ -184,16 +184,32 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
           const n = typeof v === 'number' ? v : parseFloat(v);
           return isNaN(n) ? d : n;
         };
-        const json = <T,>(k: string, d: T): T => {
-          if (!s[k]) return d;
-          try { return JSON.parse(s[k]) as T; } catch { return d; }
+        const jsonArr = <T,>(k: string, d: T[]): T[] => {
+          if (s[k] === undefined || s[k] === null || s[k] === '') return d;
+          const raw = s[k];
+          // Try JSON first
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) return parsed as T[];
+          } catch { /* fall through */ }
+          // Fallback: CSV of numbers (legacy format for autoAckChannels)
+          if (typeof raw === 'string' && raw.includes(',')) {
+            const nums = raw.split(',').map(x => parseInt(x.trim(), 10)).filter(n => !isNaN(n));
+            if (nums.length > 0) return nums as unknown as T[];
+          }
+          // Single number as string
+          if (typeof raw === 'string') {
+            const n = parseInt(raw.trim(), 10);
+            if (!isNaN(n)) return [n] as unknown as T[];
+          }
+          return d;
         };
 
         if (s.autoAckEnabled !== undefined) setAutoAckEnabled(bool('autoAckEnabled'));
         if (s.autoAckRegex !== undefined) setAutoAckRegex(s.autoAckRegex);
         if (s.autoAckMessage !== undefined) setAutoAckMessage(s.autoAckMessage);
         if (s.autoAckMessageDirect !== undefined) setAutoAckMessageDirect(s.autoAckMessageDirect);
-        if (s.autoAckChannels !== undefined) setAutoAckChannels(json<number[]>('autoAckChannels', []));
+        if (s.autoAckChannels !== undefined) setAutoAckChannels(jsonArr<number>('autoAckChannels', []));
         if (s.autoAckDirectMessages !== undefined) setAutoAckDirectMessages(bool('autoAckDirectMessages'));
         if (s.autoAckUseDM !== undefined) setAutoAckUseDM(bool('autoAckUseDM'));
         if (s.autoAckSkipIncompleteNodes !== undefined) setAutoAckSkipIncompleteNodes(bool('autoAckSkipIncompleteNodes'));
@@ -212,12 +228,12 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
         if (s.autoAnnounceEnabled !== undefined) setAutoAnnounceEnabled(bool('autoAnnounceEnabled'));
         if (s.autoAnnounceIntervalHours !== undefined) setAutoAnnounceIntervalHours(num('autoAnnounceIntervalHours', 6));
         if (s.autoAnnounceMessage !== undefined) setAutoAnnounceMessage(s.autoAnnounceMessage);
-        if (s.autoAnnounceChannelIndexes !== undefined) setAutoAnnounceChannelIndexes(json<number[]>('autoAnnounceChannelIndexes', [0]));
+        if (s.autoAnnounceChannelIndexes !== undefined) setAutoAnnounceChannelIndexes(jsonArr<number>('autoAnnounceChannelIndexes', [0]));
         if (s.autoAnnounceOnStart !== undefined) setAutoAnnounceOnStart(bool('autoAnnounceOnStart'));
         if (s.autoAnnounceUseSchedule !== undefined) setAutoAnnounceUseSchedule(bool('autoAnnounceUseSchedule'));
         if (s.autoAnnounceSchedule !== undefined) setAutoAnnounceSchedule(s.autoAnnounceSchedule);
         if (s.autoAnnounceNodeInfoEnabled !== undefined) setAutoAnnounceNodeInfoEnabled(bool('autoAnnounceNodeInfoEnabled'));
-        if (s.autoAnnounceNodeInfoChannels !== undefined) setAutoAnnounceNodeInfoChannels(json<number[]>('autoAnnounceNodeInfoChannels', []));
+        if (s.autoAnnounceNodeInfoChannels !== undefined) setAutoAnnounceNodeInfoChannels(jsonArr<number>('autoAnnounceNodeInfoChannels', []));
         if (s.autoAnnounceNodeInfoDelaySeconds !== undefined) setAutoAnnounceNodeInfoDelaySeconds(num('autoAnnounceNodeInfoDelaySeconds', 30));
 
         if (s.autoWelcomeEnabled !== undefined) setAutoWelcomeEnabled(bool('autoWelcomeEnabled'));
@@ -227,7 +243,7 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
         if (s.autoWelcomeMaxHops !== undefined) setAutoWelcomeMaxHops(num('autoWelcomeMaxHops', 5));
 
         if (s.autoResponderEnabled !== undefined) setAutoResponderEnabled(bool('autoResponderEnabled'));
-        if (s.autoResponderTriggers !== undefined) setAutoResponderTriggers(json<AutoResponderTrigger[]>('autoResponderTriggers', []));
+        if (s.autoResponderTriggers !== undefined) setAutoResponderTriggers(jsonArr<AutoResponderTrigger>('autoResponderTriggers', []));
         if (s.autoResponderSkipIncompleteNodes !== undefined) setAutoResponderSkipIncompleteNodes(bool('autoResponderSkipIncompleteNodes'));
 
         if (s.autoKeyManagementEnabled !== undefined) setAutoKeyManagementEnabled(bool('autoKeyManagementEnabled'));
@@ -242,8 +258,8 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
         if (s.autoDeleteByDistanceLat !== undefined) setAutoDeleteByDistanceLat(s.autoDeleteByDistanceLat ? num('autoDeleteByDistanceLat', 0) : null);
         if (s.autoDeleteByDistanceLon !== undefined) setAutoDeleteByDistanceLon(s.autoDeleteByDistanceLon ? num('autoDeleteByDistanceLon', 0) : null);
 
-        if (s.timerTriggers !== undefined) setTimerTriggers(json<TimerTrigger[]>('timerTriggers', []));
-        if (s.geofenceTriggers !== undefined) setGeofenceTriggers(json<GeofenceTrigger[]>('geofenceTriggers', []));
+        if (s.timerTriggers !== undefined) setTimerTriggers(jsonArr<TimerTrigger>('timerTriggers', []));
+        if (s.geofenceTriggers !== undefined) setGeofenceTriggers(jsonArr<GeofenceTrigger>('geofenceTriggers', []));
       } catch (err) {
         logger.error('[AutomationContext] Failed to load settings:', err);
       }
