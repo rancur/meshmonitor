@@ -84,7 +84,7 @@ const AutoWelcomeSection: React.FC<AutoWelcomeSectionProps> = ({
   const handleMarkAllWelcomed = async () => {
     setIsMarkingWelcomed(true);
     try {
-      const response = await csrfFetch(`${baseUrl}/api/settings/mark-all-welcomed`, {
+      const response = await csrfFetch(`${baseUrl}/api/settings/mark-all-welcomed${sourceQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });

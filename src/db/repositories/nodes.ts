@@ -293,16 +293,22 @@ export class NodesRepository extends BaseRepository {
   }
 
   /**
-   * Mark all existing nodes as welcomed
+   * Mark all existing nodes as welcomed.
+   * If `sourceId` is provided, only nodes belonging to that source are updated;
+   * otherwise all nodes are updated (legacy behavior).
    */
-  async markAllNodesAsWelcomed(): Promise<number> {
+  async markAllNodesAsWelcomed(sourceId?: string | null): Promise<number> {
     const now = this.now();
     const { nodes } = this.tables;
+
+    const whereClause = sourceId
+      ? and(isNull(nodes.welcomedAt), eq(nodes.sourceId, sourceId))
+      : isNull(nodes.welcomedAt);
 
     const toUpdate = await this.db
       .select({ nodeNum: nodes.nodeNum })
       .from(nodes)
-      .where(isNull(nodes.welcomedAt));
+      .where(whereClause);
 
     for (const node of toUpdate) {
       await this.db
