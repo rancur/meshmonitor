@@ -117,7 +117,11 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
   // Messages are ordered newest-first, so new messages go at the beginning
   const addMessageToCache = useCallback((message: RawMessage) => {
     queryClient.setQueryData<PollData>(pollKey, (old) => {
-      if (!old) return old;
+      if (!old) {
+        // Cache not yet populated (poll hasn't run yet) — trigger a refetch so the message appears
+        queryClient.invalidateQueries({ queryKey: pollKey });
+        return old;
+      }
 
       // Check if message already exists
       const existingMessages = old.messages || [];
