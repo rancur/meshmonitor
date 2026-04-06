@@ -5182,7 +5182,7 @@ apiRouter.post('/nodes/refresh', requirePermission('nodes', 'write'), async (req
   try {
     logger.debug('🔄 Manual node database refresh requested...');
 
-    const { sourceId: refreshSourceId } = req.body;
+    const { sourceId: refreshSourceId } = req.body || {};
     const refreshManager = (refreshSourceId
       ? (sourceManagerRegistry.getManager(refreshSourceId) as typeof meshtasticManager ?? meshtasticManager)
       : meshtasticManager);

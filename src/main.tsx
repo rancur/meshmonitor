@@ -32,7 +32,8 @@ function SourceApp() {
   return (
     <SourceProvider sourceId={sourceId}>
       <WebSocketProvider>
-        <App />
+        {/* key={sourceId} forces full remount when switching sources, resetting all DataContext/MessagingContext state */}
+        <App key={sourceId} />
       </WebSocketProvider>
     </SourceProvider>
   );
