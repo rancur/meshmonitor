@@ -885,8 +885,10 @@ function App() {
           configBaseUrl = initialBaseUrl;
         }
 
-        // Load settings from server
-        const settingsResponse = await authFetch(`${baseUrl}/api/settings`);
+        // Load settings from server (per-source if a sourceId is active, so
+        // per-source automation values win over global defaults)
+        const settingsQuery = sourceId ? `?sourceId=${encodeURIComponent(sourceId)}` : '';
+        const settingsResponse = await authFetch(`${baseUrl}/api/settings${settingsQuery}`);
         if (settingsResponse.ok) {
           const settings = await settingsResponse.json();
 
