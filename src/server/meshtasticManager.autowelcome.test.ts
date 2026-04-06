@@ -15,6 +15,9 @@ vi.mock('../services/database.js', () => ({
     settings: {
       getSetting: vi.fn(),
       setSetting: vi.fn(),
+      getSettingForSource: vi.fn((_sourceId: string | null | undefined, key: string) =>
+        (databaseService.settings.getSetting as any)(key)
+      ),
     },
     nodes: {
       getNode: vi.fn(),
