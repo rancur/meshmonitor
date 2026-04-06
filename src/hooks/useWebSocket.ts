@@ -84,11 +84,11 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
   const socketRef = useRef<Socket | null>(null);
   const queryClient = useQueryClient();
   const { sourceId } = useSource();
-  const pollKey = sourcePollQueryKey(sourceId);
 
   // Helper to update a node in the cache
   const updateNodeInCache = useCallback((nodeNum: number, nodeUpdate: Partial<DeviceInfo>) => {
-    queryClient.setQueryData<PollData>(pollKey, (old) => {
+    const key = sourcePollQueryKey(sourceId);
+    queryClient.setQueryData<PollData>(key, (old) => {
       if (!old?.nodes) return old;
 
       const updatedNodes = old.nodes.map((node) => {
@@ -111,37 +111,34 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
 
       return { ...old, nodes: updatedNodes };
     });
-  }, [queryClient]);
+  }, [queryClient, sourceId]);
 
   // Helper to add a new message to the cache
   // Messages are ordered newest-first, so new messages go at the beginning
   const addMessageToCache = useCallback((message: RawMessage) => {
-    queryClient.setQueryData<PollData>(pollKey, (old) => {
+    const key = sourcePollQueryKey(sourceId);
+    queryClient.setQueryData<PollData>(key, (old) => {
       if (!old) {
-        // Cache not yet populated (poll hasn't run yet) — trigger a refetch so the message appears
-        queryClient.invalidateQueries({ queryKey: pollKey });
+        queryClient.invalidateQueries({ queryKey: key });
         return old;
       }
 
-      // Check if message already exists
       const existingMessages = old.messages || [];
-      const messageExists = existingMessages.some(m => m.id === message.id);
-
-      if (messageExists) {
+      if (existingMessages.some(m => m.id === message.id)) {
         return old;
       }
 
-      // Add new message at the beginning (messages are sorted newest-first)
       return {
         ...old,
         messages: [message, ...existingMessages],
       };
     });
-  }, [queryClient]);
+  }, [queryClient, sourceId]);
 
   // Helper to update connection status in cache
   const updateConnectionInCache = useCallback((status: ConnectionStatusEvent) => {
-    queryClient.setQueryData<PollData>(pollKey, (old) => {
+    const key = sourcePollQueryKey(sourceId);
+    queryClient.setQueryData<PollData>(key, (old) => {
       if (!old) return old;
 
       return {
@@ -155,11 +152,12 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
         },
       };
     });
-  }, [queryClient]);
+  }, [queryClient, sourceId]);
 
   // Helper to update channels in cache
   const updateChannelInCache = useCallback((channel: Channel) => {
-    queryClient.setQueryData<PollData>(pollKey, (old) => {
+    const key = sourcePollQueryKey(sourceId);
+    queryClient.setQueryData<PollData>(key, (old) => {
       if (!old?.channels) return old;
 
       const channelExists = old.channels.some(c => c.id === channel.id);
@@ -175,7 +173,7 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
 
       return { ...old, channels: updatedChannels };
     });
-  }, [queryClient]);
+  }, [queryClient, sourceId]);
 
   useEffect(() => {
     if (!enabled) {
@@ -259,15 +257,15 @@ export function useWebSocket(enabled: boolean = true): WebSocketState {
     });
 
     socket.on('traceroute:complete', (_data: TracerouteCompleteEvent) => {
-      queryClient.invalidateQueries({ queryKey: pollKey });
+      queryClient.invalidateQueries({ queryKey: sourcePollQueryKey(sourceId) });
     });
 
     socket.on('routing:update', (_data: { requestId: number; status: string }) => {
-      queryClient.invalidateQueries({ queryKey: pollKey });
+      queryClient.invalidateQueries({ queryKey: sourcePollQueryKey(sourceId) });
     });
 
     socket.on('telemetry:batch', (_data: { [nodeNum: number]: unknown[] }) => {
-      queryClient.invalidateQueries({ queryKey: pollKey });
+      queryClient.invalidateQueries({ queryKey: sourcePollQueryKey(sourceId) });
     });
 
     socket.on('firmware:status', (data: unknown) => {
