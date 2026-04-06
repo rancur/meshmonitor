@@ -5207,7 +5207,7 @@ const AppWithToast = () => {
         <DataProvider>
           <MessagingProvider baseUrl={initialBaseUrl}>
             <UIProvider>
-              <AutomationProvider>
+              <AutomationProvider baseUrl={initialBaseUrl}>
               <ToastProvider>
                 <SaveBarProvider>
                   <App />

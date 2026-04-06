@@ -108,9 +108,10 @@ const AutomationContext = createContext<AutomationContextType | undefined>(undef
 
 interface AutomationProviderProps {
   children: ReactNode;
+  baseUrl?: string;
 }
 
-export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children }) => {
+export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children, baseUrl = '' }) => {
   const { sourceId } = useSource();
 
   // Automation settings - loaded from backend API, not localStorage
@@ -171,7 +172,7 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
     const load = async () => {
       try {
         const sourceQuery = sourceId ? `?sourceId=${encodeURIComponent(sourceId)}` : '';
-        const response = await fetch(`/api/settings${sourceQuery}`, { credentials: 'include' });
+        const response = await fetch(`${baseUrl}/api/settings${sourceQuery}`, { credentials: 'include' });
         if (!response.ok) return;
         const s = await response.json();
         if (cancelled) return;
@@ -249,7 +250,7 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
     };
     load();
     return () => { cancelled = true; };
-  }, [sourceId]);
+  }, [sourceId, baseUrl]);
 
   return (
     <AutomationContext.Provider
