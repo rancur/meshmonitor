@@ -1214,10 +1214,10 @@ class MeshtasticManager implements ISourceManager {
 
     this.remoteAdminScannerInterval = setInterval(async () => {
       // Check time window schedule
-      const scheduleEnabled = await databaseService.settings.getSetting('remoteAdminScheduleEnabled');
+      const scheduleEnabled = await databaseService.settings.getSettingForSource(this.sourceId, 'remoteAdminScheduleEnabled');
       if (scheduleEnabled === 'true') {
-        const start = await databaseService.settings.getSetting('remoteAdminScheduleStart') || '00:00';
-        const end = await databaseService.settings.getSetting('remoteAdminScheduleEnd') || '00:00';
+        const start = await databaseService.settings.getSettingForSource(this.sourceId, 'remoteAdminScheduleStart') || '00:00';
+        const end = await databaseService.settings.getSettingForSource(this.sourceId, 'remoteAdminScheduleEnd') || '00:00';
         if (!isWithinTimeWindow(start, end)) {
           logger.debug(`🔑 Remote admin scanner: Skipping - outside schedule window (${start}-${end})`);
           return;

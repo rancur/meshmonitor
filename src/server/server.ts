@@ -462,17 +462,9 @@ setTimeout(async () => {
     });
     logger.debug('✅ Loaded auto key repair settings');
 
-    // Load remote admin scanner interval
-    const remoteAdminScannerInterval = await databaseService.settings.getSetting('remoteAdminScannerIntervalMinutes');
-    if (remoteAdminScannerInterval !== null) {
-      const intervalMinutes = parseInt(remoteAdminScannerInterval);
-      if (!isNaN(intervalMinutes) && intervalMinutes >= 0 && intervalMinutes <= 60) {
-        meshtasticManager.setRemoteAdminScannerInterval(intervalMinutes);
-        logger.debug(
-          `✅ Loaded saved remote admin scanner interval: ${intervalMinutes} minutes${intervalMinutes === 0 ? ' (disabled)' : ''}`
-        );
-      }
-    }
+    // Remote admin scanner: per-source managers bootstrap themselves via
+    // startRemoteAdminScanner() on connect (reads remoteAdminScannerIntervalMinutes
+    // via getSettingForSource). No global init required.
 
     // Load LocalStats collection interval
     const localStatsInterval = await databaseService.settings.getSetting('localStatsIntervalMinutes');
@@ -942,7 +934,12 @@ apiRouter.use('/map-styles', mapStyleRouter);
 setSettingsCallbacks({
   refreshTileHostnameCache,
   setTracerouteInterval: (interval) => meshtasticManager.setTracerouteInterval(interval),
-  setRemoteAdminScannerInterval: (interval) => meshtasticManager.setRemoteAdminScannerInterval(interval),
+  setRemoteAdminScannerInterval: (interval, sourceId) => {
+    const mgr = sourceId
+      ? (sourceManagerRegistry.getManager(sourceId) as typeof meshtasticManager ?? meshtasticManager)
+      : meshtasticManager;
+    mgr.setRemoteAdminScannerInterval(interval);
+  },
   setLocalStatsInterval: (interval) => meshtasticManager.setLocalStatsInterval(interval),
   setKeyRepairSettings: (settings) => meshtasticManager.setKeyRepairSettings(settings),
   restartInactiveNodeService: (threshold, check, cooldown) =>

@@ -86,14 +86,14 @@ const RemoteAdminScannerSection: React.FC<RemoteAdminScannerSectionProps> = ({
       }
     };
     fetchSettings();
-  }, [baseUrl, csrfFetch]);
+  }, [baseUrl, csrfFetch, sourceQuery]);
 
   // Fetch scan log and stats
   useEffect(() => {
     const fetchLogAndStats = async () => {
       try {
         // Fetch nodes to get stats
-        const nodesResponse = await csrfFetch(`${baseUrl}/api/nodes`);
+        const nodesResponse = await csrfFetch(`${baseUrl}/api/nodes${sourceQuery}`);
         if (nodesResponse.ok) {
           const nodes = await nodesResponse.json();
           const nodesWithPublicKey = nodes.filter((n: any) => n.user?.publicKey);
@@ -158,7 +158,7 @@ const RemoteAdminScannerSection: React.FC<RemoteAdminScannerSectionProps> = ({
     }, 30000);
 
     return () => clearInterval(intervalId);
-  }, [baseUrl, csrfFetch, localEnabled]);
+  }, [baseUrl, csrfFetch, localEnabled, sourceQuery]);
 
   // Check for changes
   useEffect(() => {

@@ -109,7 +109,7 @@ function normalizeIgnoredNodeIds(rawValue: string): string {
 export interface SettingsCallbacks {
   refreshTileHostnameCache?: () => void | Promise<void>;
   setTracerouteInterval?: (interval: number) => void;
-  setRemoteAdminScannerInterval?: (interval: number) => void;
+  setRemoteAdminScannerInterval?: (interval: number, sourceId?: string | null) => void;
   setLocalStatsInterval?: (interval: number) => void;
   setKeyRepairSettings?: (settings: {
     enabled: boolean;
@@ -125,8 +125,8 @@ export interface SettingsCallbacks {
   restartGeofenceEngine?: () => void;
   handleAutoWelcomeEnabled?: () => number;
   invalidateHtmlCache?: () => void;
-  restartAutoDeleteByDistanceService?: (intervalHours: number) => void;
-  stopAutoDeleteByDistanceService?: () => void;
+  restartAutoDeleteByDistanceService?: (intervalHours: number, sourceId?: string | null) => void;
+  stopAutoDeleteByDistanceService?: (sourceId?: string | null) => void;
 }
 
 let callbacks: SettingsCallbacks = {};
@@ -577,7 +577,7 @@ router.post('/', requirePermission('settings', 'write'), async (req: Request, re
     if ('remoteAdminScannerIntervalMinutes' in filteredSettings) {
       const interval = parseInt(filteredSettings.remoteAdminScannerIntervalMinutes);
       if (!isNaN(interval) && interval >= 0 && interval <= 60) {
-        callbacks.setRemoteAdminScannerInterval?.(interval);
+        callbacks.setRemoteAdminScannerInterval?.(interval, sourceId);
       }
     }
 
@@ -709,11 +709,11 @@ router.post('/', requirePermission('settings', 'write'), async (req: Request, re
             '24',
           10
         );
-        callbacks.restartAutoDeleteByDistanceService?.(intervalHours);
-        logger.info(`✅ Auto-delete-by-distance service restarted (interval: ${intervalHours}h)`);
+        callbacks.restartAutoDeleteByDistanceService?.(intervalHours, sourceId);
+        logger.info(`✅ Auto-delete-by-distance service restarted (source: ${sourceId ?? 'default'}, interval: ${intervalHours}h)`);
       } else {
-        callbacks.stopAutoDeleteByDistanceService?.();
-        logger.info('⏹️ Auto-delete-by-distance service stopped');
+        callbacks.stopAutoDeleteByDistanceService?.(sourceId);
+        logger.info(`⏹️ Auto-delete-by-distance service stopped (source: ${sourceId ?? 'default'})`);
       }
     }
 
