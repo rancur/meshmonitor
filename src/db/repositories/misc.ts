@@ -4,7 +4,7 @@
  * Handles solar estimates and auto-traceroute nodes database operations.
  * Supports SQLite, PostgreSQL, and MySQL through Drizzle ORM.
  */
-import { eq, desc, asc, and, gte, lte, lt, inArray, sql } from 'drizzle-orm';
+import { eq, desc, asc, and, gte, lte, lt, inArray, sql, isNull } from 'drizzle-orm';
 import { BaseRepository, DrizzleDatabase } from './base.js';
 import { DatabaseType, DbCustomTheme, DbPacketLog, DbPacketCountByNode, DbPacketCountByPortnum, DbDistinctRelayNode } from '../types.js';
 import { logger } from '../../utils/logger.js';
@@ -195,6 +195,19 @@ export class MiscRepository extends BaseRepository {
   async addAutoTracerouteNode(nodeNum: number, sourceId?: string): Promise<void> {
     const now = this.now();
     const { autoTracerouteNodes } = this.tables;
+
+    // Pre-check for the (nodeNum, sourceId) tuple. Needed because SQLite/MySQL
+    // treat NULL as distinct in UNIQUE constraints, so insertIgnore would
+    // allow duplicate unscoped rows.
+    const whereClause = sourceId
+      ? and(eq(autoTracerouteNodes.nodeNum, nodeNum), eq(autoTracerouteNodes.sourceId, sourceId))
+      : and(eq(autoTracerouteNodes.nodeNum, nodeNum), isNull(autoTracerouteNodes.sourceId));
+    const existing = await this.db
+      .select({ id: autoTracerouteNodes.id })
+      .from(autoTracerouteNodes)
+      .where(whereClause)
+      .limit(1);
+    if (existing.length > 0) return;
 
     await this.insertIgnore(autoTracerouteNodes, {
       nodeNum,

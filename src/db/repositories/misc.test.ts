@@ -31,9 +31,11 @@ const SQLITE_CREATE = `
   );
   CREATE TABLE IF NOT EXISTS auto_traceroute_nodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nodeNum INTEGER NOT NULL UNIQUE,
+    nodeNum INTEGER NOT NULL,
     enabled INTEGER DEFAULT 1,
-    createdAt INTEGER NOT NULL
+    createdAt INTEGER NOT NULL,
+    sourceId TEXT,
+    UNIQUE(nodeNum, sourceId)
   );
   CREATE TABLE IF NOT EXISTS upgrade_history (
     id TEXT PRIMARY KEY,
@@ -93,9 +95,11 @@ const POSTGRES_CREATE = `
   );
   CREATE TABLE auto_traceroute_nodes (
     id SERIAL PRIMARY KEY,
-    "nodeNum" BIGINT NOT NULL UNIQUE,
+    "nodeNum" BIGINT NOT NULL,
     enabled BOOLEAN DEFAULT true,
-    "createdAt" BIGINT NOT NULL
+    "createdAt" BIGINT NOT NULL,
+    "sourceId" TEXT,
+    UNIQUE("nodeNum", "sourceId")
   );
   CREATE TABLE upgrade_history (
     id TEXT PRIMARY KEY,
@@ -156,9 +160,11 @@ const MYSQL_CREATE = `
   );
   CREATE TABLE auto_traceroute_nodes (
     id SERIAL PRIMARY KEY,
-    nodeNum BIGINT NOT NULL UNIQUE,
+    nodeNum BIGINT NOT NULL,
     enabled BOOLEAN DEFAULT true,
-    createdAt BIGINT NOT NULL
+    createdAt BIGINT NOT NULL,
+    sourceId VARCHAR(64),
+    UNIQUE(nodeNum, sourceId)
   );
   CREATE TABLE upgrade_history (
     id VARCHAR(64) PRIMARY KEY,
