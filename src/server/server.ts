@@ -4336,10 +4336,10 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
               const remapped = channelRemap.get(`${msgSourceId}_${channel}`);
               if (remapped !== undefined) channel = remapped;
             }
-            return transformDbMessageToMeshMessage({ ...msg, channel } as DbMessage);
+            return transformDbMessageToMeshMessage({ ...msg, channel } as any as DbMessage);
           });
         } else {
-          messages = dbMessagesRaw.map(msg => transformDbMessageToMeshMessage(msg));
+          messages = dbMessagesRaw.map(msg => transformDbMessageToMeshMessage(msg as any as DbMessage));
         }
 
         // Filter messages based on permissions
