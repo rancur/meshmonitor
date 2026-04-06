@@ -2124,6 +2124,7 @@ function transformDbMessageToMeshMessage(msg: DbMessage): MeshMessage {
     relayNode: msg.relayNode ?? undefined,
     replyId: msg.replyId ?? undefined,
     emoji: msg.emoji ?? undefined,
+    viaMqtt: Boolean((msg as any).viaMqtt),
     rxSnr: msg.rxSnr ?? undefined,
     rxRssi: msg.rxRssi ?? undefined,
     requestId: (msg as any).requestId,
@@ -4307,7 +4308,39 @@ apiRouter.get('/poll', optionalAuth(), async (req, res) => {
     // 3. Messages (requires any channel permission OR messages permission)
     try {
       if (hasChannelsRead || hasMessagesRead) {
-        let messages = await activeManager.getRecentMessages(100, pollSourceId);
+        // Fetch all messages globally (no sourceId filter) so cross-source messages are included.
+        // When a sourceId is specified, remap each message's channel slot index to match the
+        // requesting source's slot layout using name+PSK channel equivalence.
+        const dbMessagesRaw = await databaseService.messages.getMessages(100);
+
+        let messages: MeshMessage[];
+        if (pollSourceId) {
+          // Build a channel equivalence map: (otherSourceId_slotIndex) -> requestingSource slotIndex
+          const allChannelsGlobal = await databaseService.channels.getAllChannels();
+          const myChannels = allChannelsGlobal.filter(c => (c as any).sourceId === pollSourceId);
+          const channelRemap = new Map<string, number>();
+          for (const myChannel of myChannels) {
+            if (!myChannel.name || myChannel.role === 0) continue;
+            for (const otherChannel of allChannelsGlobal) {
+              if ((otherChannel as any).sourceId === pollSourceId) continue;
+              if (otherChannel.name === myChannel.name && otherChannel.psk === myChannel.psk) {
+                channelRemap.set(`${(otherChannel as any).sourceId}_${otherChannel.id}`, myChannel.id);
+              }
+            }
+          }
+          // Remap each cross-source message's channel to the requesting source's equivalent slot
+          messages = dbMessagesRaw.map(msg => {
+            const msgSourceId = (msg as any).sourceId;
+            let channel = msg.channel;
+            if (channel !== -1 && msgSourceId && msgSourceId !== pollSourceId) {
+              const remapped = channelRemap.get(`${msgSourceId}_${channel}`);
+              if (remapped !== undefined) channel = remapped;
+            }
+            return transformDbMessageToMeshMessage({ ...msg, channel } as DbMessage);
+          });
+        } else {
+          messages = dbMessagesRaw.map(msg => transformDbMessageToMeshMessage(msg));
+        }
 
         // Filter messages based on permissions
         if (hasChannelsRead && !hasMessagesRead) {

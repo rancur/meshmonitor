@@ -166,8 +166,9 @@ export function initializeWebSocket(
     const handler = (event: DataEvent) => {
       // Source-aware filtering: if the client has joined source rooms, only forward
       // events that match one of those rooms. Legacy clients (no rooms) get all events.
+      // Exception: message:new events are globally visible across sources — broadcast to all.
       const sourceRooms = Array.from(socket.rooms).filter(r => r.startsWith('source:'));
-      if (sourceRooms.length > 0 && event.sourceId) {
+      if (sourceRooms.length > 0 && event.sourceId && event.type !== 'message:new') {
         if (!sourceRooms.includes(`source:${event.sourceId}`)) {
           return; // Skip — event is from a source this client didn't join
         }
