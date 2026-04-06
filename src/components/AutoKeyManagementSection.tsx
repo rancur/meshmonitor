@@ -85,11 +85,17 @@ const AutoKeyManagementSection: React.FC<AutoKeyManagementSectionProps> = ({
     setLocalImmediatePurge(immediatePurge);
   }, [enabled, intervalMinutes, maxExchanges, autoPurge, immediatePurge]);
 
+  // Reset log when the selected source changes so stale per-source
+  // history doesn't briefly flash before the new fetch lands.
+  useEffect(() => {
+    setRepairLog([]);
+  }, [sourceQuery]);
+
   // Fetch repair log
   useEffect(() => {
     const fetchLog = async () => {
       try {
-        const response = await csrfFetch(`${baseUrl}/api/settings/key-repair-log`);
+        const response = await csrfFetch(`${baseUrl}/api/settings/key-repair-log${sourceQuery}`);
         if (response.ok) {
           const data = await response.json();
           setRepairLog(data.log || []);
@@ -103,7 +109,7 @@ const AutoKeyManagementSection: React.FC<AutoKeyManagementSectionProps> = ({
     // Refresh log every 30 seconds
     const interval = setInterval(fetchLog, 30000);
     return () => clearInterval(interval);
-  }, [baseUrl, csrfFetch]);
+  }, [baseUrl, csrfFetch, sourceQuery]);
 
   const handleSaveForSaveBar = useCallback(async () => {
     setIsSaving(true);

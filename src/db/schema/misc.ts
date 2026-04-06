@@ -251,6 +251,7 @@ export const autoKeyRepairLogSqlite = sqliteTable('auto_key_repair_log', {
   action: text('action').notNull(),
   success: integer('success'),
   createdAt: integer('created_at'),
+  sourceId: text('sourceId'),
 });
 
 export const autoKeyRepairLogPostgres = pgTable('auto_key_repair_log', {
@@ -261,6 +262,7 @@ export const autoKeyRepairLogPostgres = pgTable('auto_key_repair_log', {
   action: pgText('action').notNull(),
   success: pgInteger('success'),
   createdAt: pgBigint('created_at', { mode: 'number' }),
+  sourceId: pgText('sourceId'),
 });
 
 // ============ AUTO DISTANCE DELETE LOG ============
@@ -419,6 +421,7 @@ export const autoKeyRepairLogMysql = mysqlTable('auto_key_repair_log', {
   action: myText('action').notNull(),
   success: myInt('success'),
   createdAt: myBigint('created_at', { mode: 'number' }),
+  sourceId: myVarchar('sourceId', { length: 64 }),
 });
 
 export const autoDistanceDeleteLogMysql = mysqlTable('auto_distance_delete_log', {

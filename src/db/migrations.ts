@@ -38,6 +38,7 @@ import { migration as multiSourceChannelsMigration, runMigration023Postgres, run
 import { migration as addSourceIdToTracerouteTablesMigration, runMigration024Postgres, runMigration024Mysql } from '../server/migrations/024_add_source_id_to_traceroute_tables.js';
 import { migration as addSourceIdToTimeSyncNodesMigration, runMigration025Postgres, runMigration025Mysql } from '../server/migrations/025_add_source_id_to_time_sync_nodes.js';
 import { migration as addSourceIdToDistanceDeleteLogMigration, runMigration026Postgres, runMigration026Mysql } from '../server/migrations/026_add_source_id_to_distance_delete_log.js';
+import { migration as addSourceIdToKeyRepairLogMigration, runMigration027Postgres, runMigration027Mysql } from '../server/migrations/027_add_source_id_to_key_repair_log.js';
 
 // ============================================================================
 // Registry
@@ -367,4 +368,19 @@ registry.register({
   sqlite: (db) => addSourceIdToDistanceDeleteLogMigration.up(db),
   postgres: (client) => runMigration026Postgres(client),
   mysql: (pool) => runMigration026Mysql(pool),
+});
+
+// ---------------------------------------------------------------------------
+// Migration 027: Per-source auto-key-repair log (Phase 2e)
+// Adds nullable sourceId to auto_key_repair_log so each source's key-repair
+// attempts are tracked independently.
+// ---------------------------------------------------------------------------
+
+registry.register({
+  number: 27,
+  name: 'add_source_id_to_key_repair_log',
+  settingsKey: 'migration_027_add_source_id_to_key_repair_log',
+  sqlite: (db) => addSourceIdToKeyRepairLogMigration.up(db),
+  postgres: (client) => runMigration027Postgres(client),
+  mysql: (pool) => runMigration027Mysql(pool),
 });

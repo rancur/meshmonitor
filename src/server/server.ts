@@ -5696,9 +5696,10 @@ apiRouter.post('/auto-ping/stop/:nodeNum', requirePermission('settings', 'write'
 });
 
 // Get auto key repair log (recent key repair attempts with success/fail status)
-apiRouter.get('/settings/key-repair-log', requirePermission('settings', 'read'), async (_req, res) => {
+apiRouter.get('/settings/key-repair-log', requirePermission('settings', 'read'), async (req, res) => {
   try {
-    const log = await databaseService.getKeyRepairLogAsync(50);
+    const krSourceId = req.query.sourceId as string | undefined;
+    const log = await databaseService.getKeyRepairLogAsync(50, krSourceId);
     res.json({
       success: true,
       log,
@@ -5741,18 +5742,19 @@ apiRouter.post('/settings/distance-delete/run-now', requirePermission('settings'
 // Mark all nodes as welcomed (for auto-welcome feature)
 apiRouter.post('/settings/mark-all-welcomed', requirePermission('settings', 'write'), async (req, res) => {
   try {
-    const count = await databaseService.markAllNodesAsWelcomedAsync();
-    logger.info(`👋 Manually marked ${count} nodes as welcomed via API`);
+    const sourceId = (req.query.sourceId as string | undefined) ?? (req.body?.sourceId as string | undefined) ?? null;
+    const count = await databaseService.markAllNodesAsWelcomedAsync(sourceId);
+    logger.info(`👋 Manually marked ${count} nodes as welcomed via API${sourceId ? ` (source=${sourceId})` : ''}`);
 
     // Audit log
     databaseService.auditLogAsync(
       req.user!.id,
       'mark_all_welcomed',
       'nodes',
-      `Marked ${count} nodes as welcomed`,
+      `Marked ${count} nodes as welcomed${sourceId ? ` for source ${sourceId}` : ''}`,
       req.ip || null,
       null,
-      JSON.stringify({ count })
+      JSON.stringify({ count, sourceId })
     );
 
     res.json({ success: true, count, message: `Marked ${count} nodes as welcomed` });

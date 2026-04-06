@@ -1510,7 +1510,8 @@ class DatabaseService {
         nodeName TEXT,
         action TEXT NOT NULL,
         success INTEGER,
-        created_at INTEGER
+        created_at INTEGER,
+        sourceId TEXT
       );
     `);
 
@@ -2263,12 +2264,13 @@ class DatabaseService {
    * Mark all existing nodes as welcomed to prevent thundering herd on startup
    * Should be called when Auto-Welcome is enabled during server initialization
    */
-  markAllNodesAsWelcomed(): number {
+  markAllNodesAsWelcomed(sourceId?: string | null): number {
     const now = Date.now();
     // Update cache for PostgreSQL/MySQL
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       let count = 0;
       for (const node of this.nodesCache.values()) {
+        if (sourceId && (node as any).sourceId !== sourceId) continue;
         if (node.welcomedAt === undefined || node.welcomedAt === null) {
           node.welcomedAt = now;
           node.updatedAt = now;
@@ -2277,11 +2279,16 @@ class DatabaseService {
       }
       // Fire and forget async update
       if (this.nodesRepo) {
-        this.nodesRepo.markAllNodesAsWelcomed().catch((err: Error) => {
+        this.nodesRepo.markAllNodesAsWelcomed(sourceId ?? null).catch((err: Error) => {
           logger.error('Failed to mark all nodes as welcomed:', err);
         });
       }
       return count;
+    }
+    if (sourceId) {
+      const stmt = this.db.prepare('UPDATE nodes SET welcomedAt = ? WHERE welcomedAt IS NULL AND sourceId = ?');
+      const result = stmt.run(now, sourceId);
+      return result.changes;
     }
     const stmt = this.db.prepare('UPDATE nodes SET welcomedAt = ? WHERE welcomedAt IS NULL');
     const result = stmt.run(now);
@@ -6698,15 +6705,16 @@ class DatabaseService {
     action: string,
     success: boolean | null = null,
     oldKeyFragment: string | null = null,
-    newKeyFragment: string | null = null
+    newKeyFragment: string | null = null,
+    sourceId: string | null = null
   ): Promise<number> {
     if (this.drizzleDbType === 'postgres') {
       const client = await this.postgresPool!.connect();
       try {
         const result = await client.query(
-          `INSERT INTO auto_key_repair_log (timestamp, "nodeNum", "nodeName", action, success, created_at, "oldKeyFragment", "newKeyFragment")
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-          [Date.now(), nodeNum, nodeName, action, success === null ? null : (success ? 1 : 0), Date.now(), oldKeyFragment, newKeyFragment]
+          `INSERT INTO auto_key_repair_log (timestamp, "nodeNum", "nodeName", action, success, created_at, "oldKeyFragment", "newKeyFragment", "sourceId")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+          [Date.now(), nodeNum, nodeName, action, success === null ? null : (success ? 1 : 0), Date.now(), oldKeyFragment, newKeyFragment, sourceId]
         );
         await client.query(
           `DELETE FROM auto_key_repair_log WHERE id NOT IN (
@@ -6720,9 +6728,9 @@ class DatabaseService {
     } else if (this.drizzleDbType === 'mysql') {
       const pool = this.mysqlPool!;
       const [result] = await pool.query(
-        `INSERT INTO auto_key_repair_log (timestamp, nodeNum, nodeName, action, success, created_at, oldKeyFragment, newKeyFragment)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [Date.now(), nodeNum, nodeName, action, success === null ? null : (success ? 1 : 0), Date.now(), oldKeyFragment, newKeyFragment]
+        `INSERT INTO auto_key_repair_log (timestamp, nodeNum, nodeName, action, success, created_at, oldKeyFragment, newKeyFragment, sourceId)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [Date.now(), nodeNum, nodeName, action, success === null ? null : (success ? 1 : 0), Date.now(), oldKeyFragment, newKeyFragment, sourceId]
       );
       await pool.query(
         `DELETE FROM auto_key_repair_log WHERE id NOT IN (
@@ -6733,15 +6741,15 @@ class DatabaseService {
     }
     // SQLite fallback - use existing sync method plus new columns
     const stmt = this.db.prepare(`
-      INSERT INTO auto_key_repair_log (timestamp, nodeNum, nodeName, action, success, created_at, oldKeyFragment, newKeyFragment)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO auto_key_repair_log (timestamp, nodeNum, nodeName, action, success, created_at, oldKeyFragment, newKeyFragment, sourceId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const info = stmt.run(Date.now(), nodeNum, nodeName, action, success === null ? null : (success ? 1 : 0), Date.now(), oldKeyFragment, newKeyFragment);
+    const info = stmt.run(Date.now(), nodeNum, nodeName, action, success === null ? null : (success ? 1 : 0), Date.now(), oldKeyFragment, newKeyFragment, sourceId);
     this.db.prepare('DELETE FROM auto_key_repair_log WHERE id NOT IN (SELECT id FROM auto_key_repair_log ORDER BY timestamp DESC LIMIT 100)').run();
     return Number(info.lastInsertRowid);
   }
 
-  async getKeyRepairLogAsync(limit: number = 50): Promise<{
+  async getKeyRepairLogAsync(limit: number = 50, sourceId?: string): Promise<{
     id: number;
     timestamp: number;
     nodeNum: number;
@@ -6770,9 +6778,17 @@ class DatabaseService {
           ? 'id, timestamp, "nodeNum", "nodeName", action, success, "oldKeyFragment", "newKeyFragment"'
           : 'id, timestamp, "nodeNum", "nodeName", action, success';
 
+        // Check if sourceId column exists (migration 027)
+        const sourceColCheck = await client.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'auto_key_repair_log' AND column_name = 'sourceId'"
+        );
+        const hasSourceId = sourceColCheck.rows.length > 0;
+        const whereClause = sourceId && hasSourceId ? `WHERE "sourceId" = $2` : '';
+        const params: any[] = sourceId && hasSourceId ? [limit, sourceId] : [limit];
+
         const result = await client.query(
-          `SELECT ${selectCols} FROM auto_key_repair_log ORDER BY timestamp DESC LIMIT $1`,
-          [limit]
+          `SELECT ${selectCols} FROM auto_key_repair_log ${whereClause} ORDER BY timestamp DESC LIMIT $1`,
+          params
         );
         return result.rows.map((row: any) => ({
           id: row.id,
@@ -6806,9 +6822,17 @@ class DatabaseService {
         ? 'id, timestamp, nodeNum, nodeName, action, success, oldKeyFragment, newKeyFragment'
         : 'id, timestamp, nodeNum, nodeName, action, success';
 
+      // Check if sourceId column exists (migration 027)
+      const [sourceColRows] = await pool.query(
+        "SELECT COLUMN_NAME FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'auto_key_repair_log' AND column_name = 'sourceId'"
+      );
+      const hasSourceIdMy = (sourceColRows as any[]).length > 0;
+      const whereClauseMy = sourceId && hasSourceIdMy ? 'WHERE sourceId = ?' : '';
+      const paramsMy: any[] = sourceId && hasSourceIdMy ? [sourceId, limit] : [limit];
+
       const [rows] = await pool.query(
-        `SELECT ${selectCols} FROM auto_key_repair_log ORDER BY timestamp DESC LIMIT ?`,
-        [limit]
+        `SELECT ${selectCols} FROM auto_key_repair_log ${whereClauseMy} ORDER BY timestamp DESC LIMIT ?`,
+        paramsMy
       );
       return (rows as any[]).map((row: any) => ({
         id: row.id,
@@ -6837,10 +6861,18 @@ class DatabaseService {
       ? 'id, timestamp, nodeNum, nodeName, action, success, oldKeyFragment, newKeyFragment'
       : 'id, timestamp, nodeNum, nodeName, action, success';
 
+    // Check if sourceId column exists (migration 027)
+    const hasSourceIdColSqlite = this.db.prepare(
+      "SELECT COUNT(*) as count FROM pragma_table_info('auto_key_repair_log') WHERE name='sourceId'"
+    ).get() as { count: number };
+    const useSourceFilter = !!sourceId && hasSourceIdColSqlite.count > 0;
+    const whereClauseSqlite = useSourceFilter ? 'WHERE sourceId = ?' : '';
+    const paramsSqlite: any[] = useSourceFilter ? [sourceId, limit] : [limit];
+
     const rows = this.db.prepare(`
       SELECT ${selectCols}
-      FROM auto_key_repair_log ORDER BY timestamp DESC LIMIT ?
-    `).all(limit) as any[];
+      FROM auto_key_repair_log ${whereClauseSqlite} ORDER BY timestamp DESC LIMIT ?
+    `).all(...paramsSqlite) as any[];
     return rows.map((row: any) => ({
       id: row.id,
       timestamp: Number(row.timestamp),
@@ -10556,8 +10588,8 @@ class DatabaseService {
     return this.handleAutoWelcomeEnabled();
   }
 
-  async markAllNodesAsWelcomedAsync(): Promise<number> {
-    return this.markAllNodesAsWelcomed();
+  async markAllNodesAsWelcomedAsync(sourceId?: string | null): Promise<number> {
+    return this.markAllNodesAsWelcomed(sourceId ?? null);
   }
 
   // Group 4: Traceroutes

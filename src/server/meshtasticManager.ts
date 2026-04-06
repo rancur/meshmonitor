@@ -1425,23 +1425,23 @@ class MeshtasticManager implements ISourceManager {
             logger.info(`🔐 Key repair: Auto-purging node ${nodeName} from device database`);
             try {
               await this.sendRemoveNode(node.nodeNum);
-              databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'purge', true);
+              databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'purge', true, null, null, this.sourceId);
               logger.info(`🔐 Key repair: Purged node ${nodeName}, sending final node info exchange`);
 
               // Send one more node info exchange after purge — use channel, not DM
               // (keys are mismatched so PKI-encrypted DMs would fail)
               const purgedNodeData = await databaseService.nodes.getNode(node.nodeNum);
               await this.sendNodeInfoRequest(node.nodeNum, purgedNodeData?.channel ?? 0);
-              databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'exchange', null);
+              databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'exchange', null, null, null, this.sourceId);
             } catch (error) {
               logger.error(`🔐 Key repair: Failed to purge node ${nodeName}:`, error);
-              databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'purge', false);
+              databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'purge', false, null, null, this.sourceId);
             }
           }
 
           // Mark as exhausted
           await databaseService.setKeyRepairStateAsync(node.nodeNum, { exhausted: true });
-          databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'exhausted', null);
+          databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, 'exhausted', null, null, null, this.sourceId);
           continue;
         }
 
@@ -1460,10 +1460,10 @@ class MeshtasticManager implements ISourceManager {
             startedAt: node.startedAt ?? now
           });
 
-          databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, `exchange (${node.attemptCount + 1}/${this.keyRepairMaxExchanges})`, null);
+          databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, `exchange (${node.attemptCount + 1}/${this.keyRepairMaxExchanges})`, null, null, null, this.sourceId);
         } catch (error) {
           logger.error(`🔐 Key repair: Failed to send node info to ${nodeName}:`, error);
-          databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, `exchange (${node.attemptCount + 1}/${this.keyRepairMaxExchanges})`, false);
+          databaseService.logKeyRepairAttemptAsync(node.nodeNum, nodeName, `exchange (${node.attemptCount + 1}/${this.keyRepairMaxExchanges})`, false, null, null, this.sourceId);
         }
       }
     } catch (error) {
@@ -4516,7 +4516,7 @@ class MeshtasticManager implements ISourceManager {
 
             const nodeName = user.longName || user.shortName || nodeId;
             databaseService.logKeyRepairAttemptAsync(
-              fromNum, nodeName, 'mismatch', null, oldFragment, newFragment
+              fromNum, nodeName, 'mismatch', null, oldFragment, newFragment, this.sourceId
             ).catch(err => logger.error('Error logging mismatch:', err));
 
             dataEventEmitter.emitNodeUpdate(fromNum, {
@@ -4530,7 +4530,7 @@ class MeshtasticManager implements ISourceManager {
                 logger.info(`🔐 Immediate purge: removing node ${nodeName} from device database`);
                 await this.sendRemoveNode(fromNum);
                 databaseService.logKeyRepairAttemptAsync(
-                  fromNum, nodeName, 'purge', true, oldFragment, newFragment
+                  fromNum, nodeName, 'purge', true, oldFragment, newFragment, this.sourceId
                 ).catch(err => logger.error('Error logging purge:', err));
 
                 // Request fresh NodeInfo exchange — use channel, not DM
@@ -4540,7 +4540,7 @@ class MeshtasticManager implements ISourceManager {
               } catch (error) {
                 logger.error(`🔐 Immediate purge failed for ${nodeName}:`, error);
                 databaseService.logKeyRepairAttemptAsync(
-                  fromNum, nodeName, 'purge', false, oldFragment, newFragment
+                  fromNum, nodeName, 'purge', false, oldFragment, newFragment, this.sourceId
                 ).catch(err => logger.error('Error logging purge failure:', err));
               }
             }
@@ -4576,7 +4576,7 @@ class MeshtasticManager implements ISourceManager {
             // Clear the repair state and log success
             databaseService.clearKeyRepairStateAsync(fromNum);
             const nodeName = user.longName || user.shortName || nodeId;
-            databaseService.logKeyRepairAttemptAsync(fromNum, nodeName, 'fixed', true);
+            databaseService.logKeyRepairAttemptAsync(fromNum, nodeName, 'fixed', true, null, null, this.sourceId);
 
             // Emit update to UI
             dataEventEmitter.emitNodeUpdate(fromNum, {
@@ -6050,7 +6050,7 @@ class MeshtasticManager implements ISourceManager {
                 logger.error('Error clearing repair state:', err)
               );
               databaseService.logKeyRepairAttemptAsync(
-                Number(nodeInfo.num), nodeName, 'fixed', true
+                Number(nodeInfo.num), nodeName, 'fixed', true, null, null, this.sourceId
               ).catch(err => logger.error('Error logging fix:', err));
 
               dataEventEmitter.emitNodeUpdate(Number(nodeInfo.num), {
