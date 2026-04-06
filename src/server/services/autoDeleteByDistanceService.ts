@@ -127,7 +127,7 @@ class AutoDeleteByDistanceService {
       const now = Date.now();
       this.lastRunAt = now;
 
-      await this.logRunAsync(now, deletedNodes.length, thresholdKm, deletedNodes);
+      await this.logRunAsync(now, deletedNodes.length, thresholdKm, deletedNodes, sourceId);
 
       if (deletedNodes.length > 0) {
         logger.info(`🗑️ Auto-delete-by-distance: deleted ${deletedNodes.length} node(s) beyond ${thresholdKm} km`);
@@ -151,7 +151,8 @@ class AutoDeleteByDistanceService {
     timestamp: number,
     nodesDeleted: number,
     thresholdKm: number,
-    details: DeletedNodeInfo[]
+    details: DeletedNodeInfo[],
+    sourceId?: string
   ): Promise<void> {
     try {
       await databaseService.misc.addDistanceDeleteLogEntry({
@@ -159,6 +160,7 @@ class AutoDeleteByDistanceService {
         nodesDeleted,
         thresholdKm,
         details: JSON.stringify(details),
+        sourceId,
       });
     } catch (error) {
       logger.error('❌ Auto-delete-by-distance: failed to log run:', error);

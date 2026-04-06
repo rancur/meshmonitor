@@ -5710,9 +5710,10 @@ apiRouter.get('/settings/key-repair-log', requirePermission('settings', 'read'),
 });
 
 // Auto-delete-by-distance log
-apiRouter.get('/settings/distance-delete/log', requirePermission('settings', 'read'), async (_req, res) => {
+apiRouter.get('/settings/distance-delete/log', requirePermission('settings', 'read'), async (req, res) => {
   try {
-    const entries = await databaseService.misc.getDistanceDeleteLog(10);
+    const distLogSourceId = req.query.sourceId as string | undefined;
+    const entries = await databaseService.misc.getDistanceDeleteLog(10, distLogSourceId);
     res.json(entries);
   } catch (error) {
     logger.error('Error fetching distance-delete log:', error);
@@ -5723,7 +5724,10 @@ apiRouter.get('/settings/distance-delete/log', requirePermission('settings', 're
 // Auto-delete-by-distance run now
 apiRouter.post('/settings/distance-delete/run-now', requirePermission('settings', 'write'), async (req, res) => {
   try {
-    const { sourceId: distDelSourceId } = req.body || {};
+    const distDelSourceId =
+      (req.body && req.body.sourceId) ||
+      (req.query.sourceId as string | undefined) ||
+      undefined;
     const result = await autoDeleteByDistanceService.runNow(distDelSourceId);
     res.json(result);
   } catch (error) {

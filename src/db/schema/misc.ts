@@ -272,6 +272,7 @@ export const autoDistanceDeleteLogSqlite = sqliteTable('auto_distance_delete_log
   thresholdKm: real('threshold_km').notNull(),
   details: text('details'),
   createdAt: integer('created_at'),
+  sourceId: text('sourceId'),
 });
 
 export const autoDistanceDeleteLogPostgres = pgTable('auto_distance_delete_log', {
@@ -281,6 +282,7 @@ export const autoDistanceDeleteLogPostgres = pgTable('auto_distance_delete_log',
   thresholdKm: pgReal('threshold_km').notNull(),
   details: pgText('details'),
   createdAt: pgBigint('created_at', { mode: 'number' }),
+  sourceId: pgText('sourceId'),
 });
 
 // ============ GEOFENCE COOLDOWNS ============
@@ -426,6 +428,7 @@ export const autoDistanceDeleteLogMysql = mysqlTable('auto_distance_delete_log',
   thresholdKm: myDouble('threshold_km').notNull(),
   details: myText('details'),
   createdAt: myBigint('created_at', { mode: 'number' }),
+  sourceId: myVarchar('sourceId', { length: 64 }),
 });
 
 export const geofenceCooldownsMysql = mysqlTable('geofence_cooldowns', {

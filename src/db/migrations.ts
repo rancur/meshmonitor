@@ -37,6 +37,7 @@ import { migration as addSourceIdToPermissionsMigration, runMigration022Postgres
 import { migration as multiSourceChannelsMigration, runMigration023Postgres, runMigration023Mysql } from '../server/migrations/023_multi_source_channels.js';
 import { migration as addSourceIdToTracerouteTablesMigration, runMigration024Postgres, runMigration024Mysql } from '../server/migrations/024_add_source_id_to_traceroute_tables.js';
 import { migration as addSourceIdToTimeSyncNodesMigration, runMigration025Postgres, runMigration025Mysql } from '../server/migrations/025_add_source_id_to_time_sync_nodes.js';
+import { migration as addSourceIdToDistanceDeleteLogMigration, runMigration026Postgres, runMigration026Mysql } from '../server/migrations/026_add_source_id_to_distance_delete_log.js';
 
 // ============================================================================
 // Registry
@@ -351,4 +352,19 @@ registry.register({
   sqlite: (db) => addSourceIdToTimeSyncNodesMigration.up(db),
   postgres: (client) => runMigration025Postgres(client),
   mysql: (pool) => runMigration025Mysql(pool),
+});
+
+// ---------------------------------------------------------------------------
+// Migration 026: Per-source auto-delete-by-distance log (Phase 2d)
+// Adds nullable sourceId to auto_distance_delete_log so each source's
+// run-now history is scoped independently.
+// ---------------------------------------------------------------------------
+
+registry.register({
+  number: 26,
+  name: 'add_source_id_to_distance_delete_log',
+  settingsKey: 'migration_026_add_source_id_to_distance_delete_log',
+  sqlite: (db) => addSourceIdToDistanceDeleteLogMigration.up(db),
+  postgres: (client) => runMigration026Postgres(client),
+  mysql: (pool) => runMigration026Mysql(pool),
 });

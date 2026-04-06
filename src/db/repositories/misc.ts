@@ -805,12 +805,21 @@ export class MiscRepository extends BaseRepository {
   // ============ DISTANCE DELETE LOG ============
 
   /**
-   * Get auto-delete-by-distance log entries
+   * Get auto-delete-by-distance log entries.
+   * If sourceId is provided, scope to that source. NULL sourceId is the
+   * legacy/unscoped bucket; an unfiltered call returns all rows.
    */
-  async getDistanceDeleteLog(limit: number = 10): Promise<any[]> {
-    const rows = await this.executeQuery(
-      sql`SELECT * FROM auto_distance_delete_log ORDER BY timestamp DESC LIMIT ${limit}`
-    );
+  async getDistanceDeleteLog(limit: number = 10, sourceId?: string): Promise<any[]> {
+    const { autoDistanceDeleteLog } = this.tables;
+    const baseQuery = (this.db as any)
+      .select()
+      .from(autoDistanceDeleteLog);
+    const query = sourceId
+      ? baseQuery.where(eq(autoDistanceDeleteLog.sourceId, sourceId))
+      : baseQuery;
+    const rows = await query
+      .orderBy(desc(autoDistanceDeleteLog.timestamp))
+      .limit(limit);
     return (rows as any[]).map((e: any) => ({
       ...e,
       details: e.details ? JSON.parse(e.details) : [],
@@ -825,12 +834,18 @@ export class MiscRepository extends BaseRepository {
     nodesDeleted: number;
     thresholdKm: number;
     details: string;
+    sourceId?: string;
   }): Promise<void> {
+    const { autoDistanceDeleteLog } = this.tables;
     const now = Date.now();
-    await this.executeRun(
-      sql`INSERT INTO auto_distance_delete_log (timestamp, nodes_deleted, threshold_km, details, created_at)
-          VALUES (${entry.timestamp}, ${entry.nodesDeleted}, ${entry.thresholdKm}, ${entry.details}, ${now})`
-    );
+    await (this.db as any).insert(autoDistanceDeleteLog).values({
+      timestamp: entry.timestamp,
+      nodesDeleted: entry.nodesDeleted,
+      thresholdKm: entry.thresholdKm,
+      details: entry.details,
+      createdAt: now,
+      sourceId: entry.sourceId ?? null,
+    });
   }
 
   // ============ PACKET LOG ============
