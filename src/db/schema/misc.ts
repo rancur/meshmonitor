@@ -187,16 +187,18 @@ export const autoTracerouteNodesPostgres = pgTable('auto_traceroute_nodes', {
 
 export const autoTimeSyncNodesSqlite = sqliteTable('auto_time_sync_nodes', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  nodeNum: integer('nodeNum').notNull().unique(),
+  nodeNum: integer('nodeNum').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
   createdAt: integer('createdAt').notNull(),
+  sourceId: text('sourceId'),
 });
 
 export const autoTimeSyncNodesPostgres = pgTable('auto_time_sync_nodes', {
   id: pgSerial('id').primaryKey(),
-  nodeNum: pgBigint('nodeNum', { mode: 'number' }).notNull().unique(),
+  nodeNum: pgBigint('nodeNum', { mode: 'number' }).notNull(),
   enabled: pgBoolean('enabled').default(true),
   createdAt: pgBigint('createdAt', { mode: 'number' }).notNull(),
+  sourceId: pgText('sourceId'),
 });
 
 // ============ AUTO TRACEROUTE LOG ============
@@ -383,9 +385,10 @@ export const autoTracerouteNodesMysql = mysqlTable('auto_traceroute_nodes', {
 
 export const autoTimeSyncNodesMysql = mysqlTable('auto_time_sync_nodes', {
   id: mySerial('id').primaryKey(),
-  nodeNum: myBigint('nodeNum', { mode: 'number' }).notNull().unique(),
+  nodeNum: myBigint('nodeNum', { mode: 'number' }).notNull(),
   enabled: myBoolean('enabled').default(true),
   createdAt: myBigint('createdAt', { mode: 'number' }).notNull(),
+  sourceId: myVarchar('sourceId', { length: 64 }),
 });
 
 export const autoTracerouteLogMysql = mysqlTable('auto_traceroute_log', {

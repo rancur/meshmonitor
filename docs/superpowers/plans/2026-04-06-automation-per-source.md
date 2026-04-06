@@ -72,6 +72,9 @@ feature to keep review tractable.
   - Global: everything else, moved to a new top-level Global Settings page
 - **Remove "Disconnect" button** from the per-source UI; relocate it to the
   3-dot popup menu on the main page, between Disable and Delete
+- **Virtual Node**: come up with a solution for what a "Virtual Node" looks
+  like in the multi-source world (cross-source aggregate identity? per-source
+  proxy node? UI for managing it?). Design needed before implementation.
 
 ## Order of work
 1. Phase 1 (single commit/PR)

@@ -10280,14 +10280,14 @@ class DatabaseService {
   /**
    * Get time sync filter settings
    */
-  async getTimeSyncFilterSettingsAsync(): Promise<{
+  async getTimeSyncFilterSettingsAsync(sourceId?: string): Promise<{
     enabled: boolean;
     nodeNums: number[];
     filterEnabled: boolean;
     expirationHours: number;
     intervalMinutes: number;
   }> {
-    const nodeNums = await this.misc.getAutoTimeSyncNodes();
+    const nodeNums = await this.misc.getAutoTimeSyncNodes(sourceId);
     return {
       enabled: this.isAutoTimeSyncEnabled(),
       nodeNums,
@@ -10306,12 +10306,12 @@ class DatabaseService {
     filterEnabled?: boolean;
     expirationHours?: number;
     intervalMinutes?: number;
-  }): Promise<void> {
+  }, sourceId?: string): Promise<void> {
     if (settings.enabled !== undefined) {
       this.setAutoTimeSyncEnabled(settings.enabled);
     }
     if (settings.nodeNums !== undefined) {
-      await this.misc.setAutoTimeSyncNodes(settings.nodeNums);
+      await this.misc.setAutoTimeSyncNodes(settings.nodeNums, sourceId);
     }
     if (settings.filterEnabled !== undefined) {
       this.setAutoTimeSyncNodeFilterEnabled(settings.filterEnabled);
@@ -10339,7 +10339,7 @@ class DatabaseService {
     // Get filter settings
     let filterNodeNums: number[] | undefined;
     if (this.isAutoTimeSyncNodeFilterEnabled()) {
-      filterNodeNums = await this.misc.getAutoTimeSyncNodes();
+      filterNodeNums = await this.misc.getAutoTimeSyncNodes(sourceId);
       if (filterNodeNums.length === 0) {
         // Filter is enabled but no nodes selected - skip
         return null;

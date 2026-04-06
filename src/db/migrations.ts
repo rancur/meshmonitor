@@ -36,6 +36,7 @@ import { migration as addSourceIdColumnsMigration, runMigration021Postgres, runM
 import { migration as addSourceIdToPermissionsMigration, runMigration022Postgres, runMigration022Mysql } from '../server/migrations/022_add_source_id_to_permissions.js';
 import { migration as multiSourceChannelsMigration, runMigration023Postgres, runMigration023Mysql } from '../server/migrations/023_multi_source_channels.js';
 import { migration as addSourceIdToTracerouteTablesMigration, runMigration024Postgres, runMigration024Mysql } from '../server/migrations/024_add_source_id_to_traceroute_tables.js';
+import { migration as addSourceIdToTimeSyncNodesMigration, runMigration025Postgres, runMigration025Mysql } from '../server/migrations/025_add_source_id_to_time_sync_nodes.js';
 
 // ============================================================================
 // Registry
@@ -335,4 +336,19 @@ registry.register({
   sqlite: (db) => addSourceIdToTracerouteTablesMigration.up(db),
   postgres: (client) => runMigration024Postgres(client),
   mysql: (pool) => runMigration024Mysql(pool),
+});
+
+// ---------------------------------------------------------------------------
+// Migration 025: Per-source auto time-sync scheduler (Phase 2c)
+// Adds sourceId to auto_time_sync_nodes, replaces UNIQUE(nodeNum) with
+// UNIQUE(nodeNum, sourceId).
+// ---------------------------------------------------------------------------
+
+registry.register({
+  number: 25,
+  name: 'add_source_id_to_time_sync_nodes',
+  settingsKey: 'migration_025_add_source_id_to_time_sync_nodes',
+  sqlite: (db) => addSourceIdToTimeSyncNodesMigration.up(db),
+  postgres: (client) => runMigration025Postgres(client),
+  mysql: (pool) => runMigration025Mysql(pool),
 });

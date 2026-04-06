@@ -4,6 +4,7 @@ import { useToast } from './ToastContainer';
 import { useCsrfFetch } from '../hooks/useCsrfFetch';
 import { useSaveBar } from '../hooks/useSaveBar';
 import { useData } from '../contexts/DataContext';
+import { useSourceQuery } from '../hooks/useSourceQuery';
 
 interface AutoTimeSyncSectionProps {
   baseUrl: string;
@@ -38,6 +39,7 @@ const AutoTimeSyncSection: React.FC<AutoTimeSyncSectionProps> = ({
   const csrfFetch = useCsrfFetch();
   const { showToast } = useToast();
   const { currentNodeId } = useData();
+  const sourceQuery = useSourceQuery();
   const [localEnabled, setLocalEnabled] = useState(false);
   const [localInterval, setLocalInterval] = useState(15);
   const [expirationHours, setExpirationHours] = useState(24);
@@ -79,7 +81,7 @@ const AutoTimeSyncSection: React.FC<AutoTimeSyncSectionProps> = ({
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await csrfFetch(`${baseUrl}/api/settings/time-sync-nodes`);
+        const response = await csrfFetch(`${baseUrl}/api/settings/time-sync-nodes${sourceQuery}`);
         if (response.ok) {
           const data: TimeSyncSettings = await response.json();
           setLocalEnabled(data.enabled);
@@ -94,7 +96,13 @@ const AutoTimeSyncSection: React.FC<AutoTimeSyncSectionProps> = ({
       }
     };
     fetchSettings();
-  }, [baseUrl, csrfFetch]);
+  }, [baseUrl, csrfFetch, sourceQuery]);
+
+  // Reset initial settings when the selected source changes so SaveBar
+  // change-detection compares against the new source's baseline.
+  useEffect(() => {
+    setInitialSettings(null);
+  }, [sourceQuery]);
 
   // Check if any settings have changed
   useEffect(() => {
@@ -124,7 +132,7 @@ const AutoTimeSyncSection: React.FC<AutoTimeSyncSectionProps> = ({
   const handleSaveForSaveBar = useCallback(async () => {
     setIsSaving(true);
     try {
-      const response = await csrfFetch(`${baseUrl}/api/settings/time-sync-nodes`, {
+      const response = await csrfFetch(`${baseUrl}/api/settings/time-sync-nodes${sourceQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -161,7 +169,7 @@ const AutoTimeSyncSection: React.FC<AutoTimeSyncSectionProps> = ({
     } finally {
       setIsSaving(false);
     }
-  }, [localEnabled, localInterval, expirationHours, filterEnabled, selectedNodeNums, baseUrl, csrfFetch, showToast, t]);
+  }, [localEnabled, localInterval, expirationHours, filterEnabled, selectedNodeNums, baseUrl, csrfFetch, showToast, t, sourceQuery]);
 
   // Register with SaveBar
   useSaveBar({

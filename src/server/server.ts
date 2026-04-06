@@ -5502,9 +5502,10 @@ apiRouter.get('/settings/traceroute-log', requirePermission('settings', 'read'),
 });
 
 // Get auto time sync settings
-apiRouter.get('/settings/time-sync-nodes', requirePermission('settings', 'read'), async (_req, res) => {
+apiRouter.get('/settings/time-sync-nodes', requirePermission('settings', 'read'), async (req, res) => {
   try {
-    const settings = await databaseService.getTimeSyncFilterSettingsAsync();
+    const sourceId = (req.query.sourceId as string | undefined) || undefined;
+    const settings = await databaseService.getTimeSyncFilterSettingsAsync(sourceId);
     res.json(settings);
   } catch (error) {
     logger.error('Error fetching auto time sync settings:', error);
@@ -5516,6 +5517,7 @@ apiRouter.get('/settings/time-sync-nodes', requirePermission('settings', 'read')
 apiRouter.post('/settings/time-sync-nodes', requirePermission('settings', 'write'), async (req, res) => {
   try {
     const { enabled, nodeNums, filterEnabled, expirationHours, intervalMinutes } = req.body;
+    const sourceId = (req.query.sourceId as string | undefined) || (req.body.sourceId as string | undefined) || undefined;
 
     // Validate input
     if (enabled !== undefined && typeof enabled !== 'boolean') {
@@ -5560,10 +5562,10 @@ apiRouter.post('/settings/time-sync-nodes', requirePermission('settings', 'write
       filterEnabled,
       expirationHours: expirationHours !== undefined ? Number(expirationHours) : undefined,
       intervalMinutes: intervalMinutes !== undefined ? Number(intervalMinutes) : undefined,
-    });
+    }, sourceId);
 
     // Update the meshtastic manager interval if connected
-    const { sourceId: timeSyncSourceId } = req.body;
+    const timeSyncSourceId = sourceId;
     const timeSyncManager = timeSyncSourceId ? (sourceManagerRegistry.getManager(timeSyncSourceId) as typeof meshtasticManager ?? meshtasticManager) : meshtasticManager;
     if (intervalMinutes !== undefined) {
       timeSyncManager.setTimeSyncInterval(enabled ? Number(intervalMinutes) : 0);
@@ -5574,7 +5576,7 @@ apiRouter.post('/settings/time-sync-nodes', requirePermission('settings', 'write
     }
 
     // Get the updated settings to return
-    const updatedSettings = await databaseService.getTimeSyncFilterSettingsAsync();
+    const updatedSettings = await databaseService.getTimeSyncFilterSettingsAsync(sourceId);
 
     res.json({
       success: true,

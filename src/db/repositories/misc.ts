@@ -541,31 +541,44 @@ export class MiscRepository extends BaseRepository {
   // ============ AUTO TIME SYNC NODES ============
 
   /**
-   * Get all auto time sync nodes
+   * Get all auto time sync nodes.
+   * When sourceId is provided, return only rows scoped to that source.
+   * When omitted, return everything.
    */
-  async getAutoTimeSyncNodes(): Promise<number[]> {
+  async getAutoTimeSyncNodes(sourceId?: string): Promise<number[]> {
     const { autoTimeSyncNodes } = this.tables;
-    const results = await this.db
+    const query = this.db
       .select({ nodeNum: autoTimeSyncNodes.nodeNum })
-      .from(autoTimeSyncNodes)
-      .orderBy(asc(autoTimeSyncNodes.createdAt));
+      .from(autoTimeSyncNodes);
+    const results = sourceId
+      ? await query
+          .where(eq(autoTimeSyncNodes.sourceId, sourceId))
+          .orderBy(asc(autoTimeSyncNodes.createdAt))
+      : await query.orderBy(asc(autoTimeSyncNodes.createdAt));
     return results.map((r: any) => Number(r.nodeNum));
   }
 
   /**
-   * Set auto time sync nodes (replaces existing)
+   * Set auto time sync nodes (replaces all existing entries for the given
+   * source, or globally when sourceId is omitted).
    */
-  async setAutoTimeSyncNodes(nodeNums: number[]): Promise<void> {
+  async setAutoTimeSyncNodes(nodeNums: number[], sourceId?: string): Promise<void> {
     const now = this.now();
     const { autoTimeSyncNodes } = this.tables;
 
-    // Delete all existing entries
-    await this.db.delete(autoTimeSyncNodes);
+    // Delete existing entries scoped to this source (or all when unscoped).
+    if (sourceId) {
+      await this.db
+        .delete(autoTimeSyncNodes)
+        .where(eq(autoTimeSyncNodes.sourceId, sourceId));
+    } else {
+      await this.db.delete(autoTimeSyncNodes);
+    }
     // Insert new entries
     for (const nodeNum of nodeNums) {
       await this.db
         .insert(autoTimeSyncNodes)
-        .values({ nodeNum, createdAt: now });
+        .values({ nodeNum, createdAt: now, sourceId: sourceId ?? null });
     }
   }
 
@@ -573,19 +586,29 @@ export class MiscRepository extends BaseRepository {
    * Add a single auto time sync node.
    * Keeps branching: MySQL lacks onConflictDoNothing.
    */
-  async addAutoTimeSyncNode(nodeNum: number): Promise<void> {
+  async addAutoTimeSyncNode(nodeNum: number, sourceId?: string): Promise<void> {
     const now = this.now();
     const { autoTimeSyncNodes } = this.tables;
 
-    await this.insertIgnore(autoTimeSyncNodes, { nodeNum, createdAt: now });
+    await this.insertIgnore(autoTimeSyncNodes, {
+      nodeNum,
+      createdAt: now,
+      sourceId: sourceId ?? null,
+    });
   }
 
   /**
    * Remove a single auto time sync node
    */
-  async removeAutoTimeSyncNode(nodeNum: number): Promise<void> {
+  async removeAutoTimeSyncNode(nodeNum: number, sourceId?: string): Promise<void> {
     const { autoTimeSyncNodes } = this.tables;
-    await this.db.delete(autoTimeSyncNodes).where(eq(autoTimeSyncNodes.nodeNum, nodeNum));
+    const where = sourceId
+      ? and(
+          eq(autoTimeSyncNodes.nodeNum, nodeNum),
+          eq(autoTimeSyncNodes.sourceId, sourceId)
+        )
+      : eq(autoTimeSyncNodes.nodeNum, nodeNum);
+    await this.db.delete(autoTimeSyncNodes).where(where);
   }
 
   // ============ CUSTOM THEMES ============
