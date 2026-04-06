@@ -5,6 +5,7 @@ import { isValidCron } from 'cron-validator';
 import { Channel } from '../types/device';
 import { useToast } from './ToastContainer';
 import { useCsrfFetch } from '../hooks/useCsrfFetch';
+import { useSourceQuery } from '../hooks/useSourceQuery';
 import { useSaveBar } from '../hooks/useSaveBar';
 
 interface AutoAnnounceSectionProps {
@@ -62,6 +63,7 @@ const AutoAnnounceSection: React.FC<AutoAnnounceSectionProps> = ({
 }) => {
   const { t } = useTranslation();
   const csrfFetch = useCsrfFetch();
+  const sourceQuery = useSourceQuery();
   const { showToast } = useToast();
   const [localEnabled, setLocalEnabled] = useState(enabled);
   const [localInterval, setLocalInterval] = useState(intervalHours || 6);
@@ -183,7 +185,7 @@ const AutoAnnounceSection: React.FC<AutoAnnounceSectionProps> = ({
     setIsSaving(true);
     try {
       // Sync to backend first
-      const response = await csrfFetch(`${baseUrl}/api/settings`, {
+      const response = await csrfFetch(`${baseUrl}/api/settings${sourceQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

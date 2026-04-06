@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCsrfFetch } from '../hooks/useCsrfFetch';
+import { useSourceQuery } from '../hooks/useSourceQuery';
 import { useSaveBar } from '../hooks/useSaveBar';
 import { useToast } from './ToastContainer';
 import { ROLE_NAMES, DeviceRole } from '../constants';
@@ -30,6 +31,7 @@ const ELIGIBLE_LOCAL_ROLES: Set<number> = new Set([DeviceRole.ROUTER, DeviceRole
 const AutoFavoriteSection: React.FC<AutoFavoriteSectionProps> = ({ baseUrl }) => {
   const { t } = useTranslation();
   const csrfFetch = useCsrfFetch();
+  const sourceQuery = useSourceQuery();
   const { showToast } = useToast();
   const [localEnabled, setLocalEnabled] = useState(false);
   const [localStaleHours, setLocalStaleHours] = useState(72);
@@ -41,7 +43,7 @@ const AutoFavoriteSection: React.FC<AutoFavoriteSectionProps> = ({ baseUrl }) =>
   const fetchData = useCallback(async () => {
     try {
       const [settingsRes, statusRes] = await Promise.all([
-        csrfFetch(`${baseUrl}/api/settings`),
+        csrfFetch(`${baseUrl}/api/settings${sourceQuery}`),
         csrfFetch(`${baseUrl}/api/auto-favorite/status`),
       ]);
       if (settingsRes.ok) {
@@ -73,7 +75,7 @@ const AutoFavoriteSection: React.FC<AutoFavoriteSectionProps> = ({ baseUrl }) =>
   const handleSave = useCallback(async () => {
     setIsSaving(true);
     try {
-      const response = await csrfFetch(`${baseUrl}/api/settings`, {
+      const response = await csrfFetch(`${baseUrl}/api/settings${sourceQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

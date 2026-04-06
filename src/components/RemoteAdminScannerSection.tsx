@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from './ToastContainer';
 import { useCsrfFetch } from '../hooks/useCsrfFetch';
+import { useSourceQuery } from '../hooks/useSourceQuery';
 import { useSaveBar } from '../hooks/useSaveBar';
 
 interface RemoteAdminScannerSectionProps {
@@ -29,6 +30,7 @@ const RemoteAdminScannerSection: React.FC<RemoteAdminScannerSectionProps> = ({
 }) => {
   const { t } = useTranslation();
   const csrfFetch = useCsrfFetch();
+  const sourceQuery = useSourceQuery();
   const { showToast } = useToast();
 
   // Local state
@@ -59,7 +61,7 @@ const RemoteAdminScannerSection: React.FC<RemoteAdminScannerSectionProps> = ({
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await csrfFetch(`${baseUrl}/api/settings`);
+        const response = await csrfFetch(`${baseUrl}/api/settings${sourceQuery}`);
         if (response.ok) {
           const data = await response.json();
           const interval = parseInt(data.remoteAdminScannerIntervalMinutes) || 0;
@@ -189,7 +191,7 @@ const RemoteAdminScannerSection: React.FC<RemoteAdminScannerSectionProps> = ({
     try {
       const intervalToSave = localEnabled ? localInterval : 0;
 
-      const response = await csrfFetch(`${baseUrl}/api/settings`, {
+      const response = await csrfFetch(`${baseUrl}/api/settings${sourceQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

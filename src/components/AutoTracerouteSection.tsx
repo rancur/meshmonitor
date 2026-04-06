@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useToast } from './ToastContainer';
 import { useCsrfFetch } from '../hooks/useCsrfFetch';
+import { useSourceQuery } from '../hooks/useSourceQuery';
 import { DEVICE_ROLES } from '../utils/deviceRole';
 import { getHardwareModelName } from '../utils/hardwareModel';
 import { useSaveBar } from '../hooks/useSaveBar';
@@ -68,6 +69,7 @@ const AutoTracerouteSection: React.FC<AutoTracerouteSectionProps> = ({
 }) => {
   const { t } = useTranslation();
   const csrfFetch = useCsrfFetch();
+  const sourceQuery = useSourceQuery();
   const { showToast } = useToast();
   const [localEnabled, setLocalEnabled] = useState(intervalMinutes > 0);
   const [localInterval, setLocalInterval] = useState(intervalMinutes > 0 ? intervalMinutes : 15);
@@ -157,7 +159,7 @@ const AutoTracerouteSection: React.FC<AutoTracerouteSectionProps> = ({
       try {
         const [filterResponse, settingsResponse] = await Promise.all([
           csrfFetch(`${baseUrl}/api/settings/traceroute-nodes`),
-          csrfFetch(`${baseUrl}/api/settings`),
+          csrfFetch(`${baseUrl}/api/settings${sourceQuery}`),
         ]);
 
         if (filterResponse.ok) {
@@ -458,7 +460,7 @@ const AutoTracerouteSection: React.FC<AutoTracerouteSectionProps> = ({
       const intervalToSave = localEnabled ? localInterval : 0;
 
       // Save traceroute interval and schedule settings
-      const intervalResponse = await csrfFetch(`${baseUrl}/api/settings`, {
+      const intervalResponse = await csrfFetch(`${baseUrl}/api/settings${sourceQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

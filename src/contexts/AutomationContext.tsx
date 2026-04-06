@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AutoResponderTrigger, TimerTrigger, GeofenceTrigger } from '../components/auto-responder/types';
+import { useSource } from './SourceContext';
+import { logger } from '../utils/logger';
 
 interface AutomationContextType {
   autoAckEnabled: boolean;
@@ -109,6 +111,8 @@ interface AutomationProviderProps {
 }
 
 export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children }) => {
+  const { sourceId } = useSource();
+
   // Automation settings - loaded from backend API, not localStorage
   const [autoAckEnabled, setAutoAckEnabled] = useState<boolean>(false);
   const [autoAckRegex, setAutoAckRegex] = useState<string>('^(test|ping)');
@@ -159,6 +163,93 @@ export const AutomationProvider: React.FC<AutomationProviderProps> = ({ children
   const [autoDeleteByDistanceLon, setAutoDeleteByDistanceLon] = useState<number | null>(null);
   const [timerTriggers, setTimerTriggers] = useState<TimerTrigger[]>([]);
   const [geofenceTriggers, setGeofenceTriggers] = useState<GeofenceTrigger[]>([]);
+
+  // Load automation settings from /api/settings, scoped by current sourceId.
+  // Refetches whenever sourceId changes so each source has independent automation config.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const sourceQuery = sourceId ? `?sourceId=${encodeURIComponent(sourceId)}` : '';
+        const response = await fetch(`/api/settings${sourceQuery}`, { credentials: 'include' });
+        if (!response.ok) return;
+        const s = await response.json();
+        if (cancelled) return;
+
+        const bool = (k: string) => s[k] === 'true' || s[k] === true;
+        const num = (k: string, d: number) => {
+          const v = s[k];
+          if (v === undefined || v === null || v === '') return d;
+          const n = typeof v === 'number' ? v : parseFloat(v);
+          return isNaN(n) ? d : n;
+        };
+        const json = <T,>(k: string, d: T): T => {
+          if (!s[k]) return d;
+          try { return JSON.parse(s[k]) as T; } catch { return d; }
+        };
+
+        if (s.autoAckEnabled !== undefined) setAutoAckEnabled(bool('autoAckEnabled'));
+        if (s.autoAckRegex !== undefined) setAutoAckRegex(s.autoAckRegex);
+        if (s.autoAckMessage !== undefined) setAutoAckMessage(s.autoAckMessage);
+        if (s.autoAckMessageDirect !== undefined) setAutoAckMessageDirect(s.autoAckMessageDirect);
+        if (s.autoAckChannels !== undefined) setAutoAckChannels(json<number[]>('autoAckChannels', []));
+        if (s.autoAckDirectMessages !== undefined) setAutoAckDirectMessages(bool('autoAckDirectMessages'));
+        if (s.autoAckUseDM !== undefined) setAutoAckUseDM(bool('autoAckUseDM'));
+        if (s.autoAckSkipIncompleteNodes !== undefined) setAutoAckSkipIncompleteNodes(bool('autoAckSkipIncompleteNodes'));
+        if (s.autoAckIgnoredNodes !== undefined) setAutoAckIgnoredNodes(s.autoAckIgnoredNodes);
+        if (s.autoAckTapbackEnabled !== undefined) setAutoAckTapbackEnabled(bool('autoAckTapbackEnabled'));
+        if (s.autoAckReplyEnabled !== undefined) setAutoAckReplyEnabled(bool('autoAckReplyEnabled'));
+        if (s.autoAckDirectEnabled !== undefined) setAutoAckDirectEnabled(bool('autoAckDirectEnabled'));
+        if (s.autoAckDirectTapbackEnabled !== undefined) setAutoAckDirectTapbackEnabled(bool('autoAckDirectTapbackEnabled'));
+        if (s.autoAckDirectReplyEnabled !== undefined) setAutoAckDirectReplyEnabled(bool('autoAckDirectReplyEnabled'));
+        if (s.autoAckMultihopEnabled !== undefined) setAutoAckMultihopEnabled(bool('autoAckMultihopEnabled'));
+        if (s.autoAckMultihopTapbackEnabled !== undefined) setAutoAckMultihopTapbackEnabled(bool('autoAckMultihopTapbackEnabled'));
+        if (s.autoAckMultihopReplyEnabled !== undefined) setAutoAckMultihopReplyEnabled(bool('autoAckMultihopReplyEnabled'));
+        if (s.autoAckCooldownSeconds !== undefined) setAutoAckCooldownSeconds(num('autoAckCooldownSeconds', 60));
+        if (s.autoAckTestMessages !== undefined) setAutoAckTestMessages(s.autoAckTestMessages);
+
+        if (s.autoAnnounceEnabled !== undefined) setAutoAnnounceEnabled(bool('autoAnnounceEnabled'));
+        if (s.autoAnnounceIntervalHours !== undefined) setAutoAnnounceIntervalHours(num('autoAnnounceIntervalHours', 6));
+        if (s.autoAnnounceMessage !== undefined) setAutoAnnounceMessage(s.autoAnnounceMessage);
+        if (s.autoAnnounceChannelIndexes !== undefined) setAutoAnnounceChannelIndexes(json<number[]>('autoAnnounceChannelIndexes', [0]));
+        if (s.autoAnnounceOnStart !== undefined) setAutoAnnounceOnStart(bool('autoAnnounceOnStart'));
+        if (s.autoAnnounceUseSchedule !== undefined) setAutoAnnounceUseSchedule(bool('autoAnnounceUseSchedule'));
+        if (s.autoAnnounceSchedule !== undefined) setAutoAnnounceSchedule(s.autoAnnounceSchedule);
+        if (s.autoAnnounceNodeInfoEnabled !== undefined) setAutoAnnounceNodeInfoEnabled(bool('autoAnnounceNodeInfoEnabled'));
+        if (s.autoAnnounceNodeInfoChannels !== undefined) setAutoAnnounceNodeInfoChannels(json<number[]>('autoAnnounceNodeInfoChannels', []));
+        if (s.autoAnnounceNodeInfoDelaySeconds !== undefined) setAutoAnnounceNodeInfoDelaySeconds(num('autoAnnounceNodeInfoDelaySeconds', 30));
+
+        if (s.autoWelcomeEnabled !== undefined) setAutoWelcomeEnabled(bool('autoWelcomeEnabled'));
+        if (s.autoWelcomeMessage !== undefined) setAutoWelcomeMessage(s.autoWelcomeMessage);
+        if (s.autoWelcomeTarget !== undefined) setAutoWelcomeTarget(s.autoWelcomeTarget);
+        if (s.autoWelcomeWaitForName !== undefined) setAutoWelcomeWaitForName(bool('autoWelcomeWaitForName'));
+        if (s.autoWelcomeMaxHops !== undefined) setAutoWelcomeMaxHops(num('autoWelcomeMaxHops', 5));
+
+        if (s.autoResponderEnabled !== undefined) setAutoResponderEnabled(bool('autoResponderEnabled'));
+        if (s.autoResponderTriggers !== undefined) setAutoResponderTriggers(json<AutoResponderTrigger[]>('autoResponderTriggers', []));
+        if (s.autoResponderSkipIncompleteNodes !== undefined) setAutoResponderSkipIncompleteNodes(bool('autoResponderSkipIncompleteNodes'));
+
+        if (s.autoKeyManagementEnabled !== undefined) setAutoKeyManagementEnabled(bool('autoKeyManagementEnabled'));
+        if (s.autoKeyManagementIntervalMinutes !== undefined) setAutoKeyManagementIntervalMinutes(num('autoKeyManagementIntervalMinutes', 5));
+        if (s.autoKeyManagementMaxExchanges !== undefined) setAutoKeyManagementMaxExchanges(num('autoKeyManagementMaxExchanges', 3));
+        if (s.autoKeyManagementAutoPurge !== undefined) setAutoKeyManagementAutoPurge(bool('autoKeyManagementAutoPurge'));
+        if (s.autoKeyManagementImmediatePurge !== undefined) setAutoKeyManagementImmediatePurge(bool('autoKeyManagementImmediatePurge'));
+
+        if (s.autoDeleteByDistanceEnabled !== undefined) setAutoDeleteByDistanceEnabled(bool('autoDeleteByDistanceEnabled'));
+        if (s.autoDeleteByDistanceIntervalHours !== undefined) setAutoDeleteByDistanceIntervalHours(num('autoDeleteByDistanceIntervalHours', 24));
+        if (s.autoDeleteByDistanceThresholdKm !== undefined) setAutoDeleteByDistanceThresholdKm(num('autoDeleteByDistanceThresholdKm', 100));
+        if (s.autoDeleteByDistanceLat !== undefined) setAutoDeleteByDistanceLat(s.autoDeleteByDistanceLat ? num('autoDeleteByDistanceLat', 0) : null);
+        if (s.autoDeleteByDistanceLon !== undefined) setAutoDeleteByDistanceLon(s.autoDeleteByDistanceLon ? num('autoDeleteByDistanceLon', 0) : null);
+
+        if (s.timerTriggers !== undefined) setTimerTriggers(json<TimerTrigger[]>('timerTriggers', []));
+        if (s.geofenceTriggers !== undefined) setGeofenceTriggers(json<GeofenceTrigger[]>('geofenceTriggers', []));
+      } catch (err) {
+        logger.error('[AutomationContext] Failed to load settings:', err);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [sourceId]);
 
   return (
     <AutomationContext.Provider
