@@ -4865,7 +4865,7 @@ class DatabaseService {
     return result;
   }
 
-  insertTraceroute(tracerouteData: DbTraceroute): void {
+  insertTraceroute(tracerouteData: DbTraceroute, sourceId?: string): void {
     // For PostgreSQL/MySQL, use async repository
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       if (this.traceroutesRepo) {
@@ -4881,7 +4881,8 @@ class DatabaseService {
             const pendingRecord = await this.traceroutesRepo!.findPendingTraceroute(
               tracerouteData.toNodeNum,    // Reversed: response's toNum is the requester
               tracerouteData.fromNodeNum,  // Reversed: response's fromNum is the destination
-              pendingTimeoutAgo
+              pendingTimeoutAgo,
+              sourceId
             );
 
             if (pendingRecord) {
@@ -4896,14 +4897,15 @@ class DatabaseService {
               );
             } else {
               // Insert new traceroute
-              await this.traceroutesRepo!.insertTraceroute(tracerouteData);
+              await this.traceroutesRepo!.insertTraceroute(tracerouteData, sourceId);
             }
 
             // Cleanup old traceroutes
             await this.traceroutesRepo!.cleanupOldTraceroutesForPair(
               tracerouteData.fromNodeNum,
               tracerouteData.toNodeNum,
-              TRACEROUTE_HISTORY_LIMIT
+              TRACEROUTE_HISTORY_LIMIT,
+              sourceId
             );
           } catch (error) {
             logger.error('[DatabaseService] Failed to insert traceroute:', error);
@@ -4922,20 +4924,35 @@ class DatabaseService {
       // NOTE: When a traceroute response comes in, fromNum is the destination (responder) and toNum is the local node (requester)
       // But when we created the pending record, fromNodeNum was the local node and toNodeNum was the destination
       // So we need to check the REVERSE direction (toNum -> fromNum instead of fromNum -> toNum)
-      const findPendingStmt = this.db.prepare(`
-        SELECT id FROM traceroutes
-        WHERE fromNodeNum = ? AND toNodeNum = ?
-        AND route IS NULL
-        AND timestamp >= ?
-        ORDER BY timestamp DESC
-        LIMIT 1
-      `);
+      const findPendingStmt = this.db.prepare(
+        sourceId !== undefined
+          ? `SELECT id FROM traceroutes
+             WHERE fromNodeNum = ? AND toNodeNum = ?
+             AND route IS NULL
+             AND timestamp >= ?
+             AND sourceId = ?
+             ORDER BY timestamp DESC
+             LIMIT 1`
+          : `SELECT id FROM traceroutes
+             WHERE fromNodeNum = ? AND toNodeNum = ?
+             AND route IS NULL
+             AND timestamp >= ?
+             ORDER BY timestamp DESC
+             LIMIT 1`
+      );
 
-      const pendingRecord = findPendingStmt.get(
-        tracerouteData.toNodeNum,    // Reversed: response's toNum is the requester
-        tracerouteData.fromNodeNum,  // Reversed: response's fromNum is the destination
-        pendingTimeoutAgo
-      ) as { id: number } | undefined;
+      const pendingRecord = (sourceId !== undefined
+        ? findPendingStmt.get(
+            tracerouteData.toNodeNum,
+            tracerouteData.fromNodeNum,
+            pendingTimeoutAgo,
+            sourceId
+          )
+        : findPendingStmt.get(
+            tracerouteData.toNodeNum,
+            tracerouteData.fromNodeNum,
+            pendingTimeoutAgo
+          )) as { id: number } | undefined;
 
       if (pendingRecord) {
         // Update the existing pending record with the response data
@@ -4957,8 +4974,8 @@ class DatabaseService {
         // No pending request found, insert a new traceroute record
         const insertStmt = this.db.prepare(`
           INSERT INTO traceroutes (
-            fromNodeNum, toNodeNum, fromNodeId, toNodeId, route, routeBack, snrTowards, snrBack, timestamp, createdAt
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            fromNodeNum, toNodeNum, fromNodeId, toNodeId, route, routeBack, snrTowards, snrBack, timestamp, createdAt, sourceId
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         insertStmt.run(
@@ -4971,29 +4988,51 @@ class DatabaseService {
           tracerouteData.snrTowards || null,
           tracerouteData.snrBack || null,
           tracerouteData.timestamp,
-          tracerouteData.createdAt
+          tracerouteData.createdAt,
+          sourceId ?? null
         );
       }
 
       // Keep only the last N traceroutes for this source-destination pair
       // Delete older traceroutes beyond the limit
-      const deleteOldStmt = this.db.prepare(`
-        DELETE FROM traceroutes
-        WHERE fromNodeNum = ? AND toNodeNum = ?
-        AND id NOT IN (
-          SELECT id FROM traceroutes
-          WHERE fromNodeNum = ? AND toNodeNum = ?
-          ORDER BY timestamp DESC
-          LIMIT ?
-        )
-      `);
-      deleteOldStmt.run(
-        tracerouteData.fromNodeNum,
-        tracerouteData.toNodeNum,
-        tracerouteData.fromNodeNum,
-        tracerouteData.toNodeNum,
-        TRACEROUTE_HISTORY_LIMIT
+      const deleteOldStmt = this.db.prepare(
+        sourceId !== undefined
+          ? `DELETE FROM traceroutes
+             WHERE fromNodeNum = ? AND toNodeNum = ? AND sourceId = ?
+             AND id NOT IN (
+               SELECT id FROM traceroutes
+               WHERE fromNodeNum = ? AND toNodeNum = ? AND sourceId = ?
+               ORDER BY timestamp DESC
+               LIMIT ?
+             )`
+          : `DELETE FROM traceroutes
+             WHERE fromNodeNum = ? AND toNodeNum = ?
+             AND id NOT IN (
+               SELECT id FROM traceroutes
+               WHERE fromNodeNum = ? AND toNodeNum = ?
+               ORDER BY timestamp DESC
+               LIMIT ?
+             )`
       );
+      if (sourceId !== undefined) {
+        deleteOldStmt.run(
+          tracerouteData.fromNodeNum,
+          tracerouteData.toNodeNum,
+          sourceId,
+          tracerouteData.fromNodeNum,
+          tracerouteData.toNodeNum,
+          sourceId,
+          TRACEROUTE_HISTORY_LIMIT
+        );
+      } else {
+        deleteOldStmt.run(
+          tracerouteData.fromNodeNum,
+          tracerouteData.toNodeNum,
+          tracerouteData.fromNodeNum,
+          tracerouteData.toNodeNum,
+          TRACEROUTE_HISTORY_LIMIT
+        );
+      }
     });
 
     transaction();
@@ -5483,7 +5522,7 @@ class DatabaseService {
     }
   }
 
-  async recordTracerouteRequest(fromNodeNum: number, toNodeNum: number): Promise<void> {
+  async recordTracerouteRequest(fromNodeNum: number, toNodeNum: number, sourceId?: string): Promise<void> {
     const now = Date.now();
 
     // For PostgreSQL/MySQL, use async repository
@@ -5510,13 +5549,14 @@ class DatabaseService {
             snrBack: null,
             timestamp: now,
             createdAt: now,
-          });
+          }, sourceId);
 
           // Cleanup old traceroutes
           await this.traceroutesRepo.cleanupOldTraceroutesForPair(
             fromNodeNum,
             toNodeNum,
-            TRACEROUTE_HISTORY_LIMIT
+            TRACEROUTE_HISTORY_LIMIT,
+            sourceId
           );
         }
       } catch (error) {
@@ -5538,8 +5578,8 @@ class DatabaseService {
 
     const insertStmt = this.db.prepare(`
       INSERT INTO traceroutes (
-        fromNodeNum, toNodeNum, fromNodeId, toNodeId, route, routeBack, snrTowards, snrBack, timestamp, createdAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        fromNodeNum, toNodeNum, fromNodeId, toNodeId, route, routeBack, snrTowards, snrBack, timestamp, createdAt, sourceId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     insertStmt.run(
@@ -5552,21 +5592,35 @@ class DatabaseService {
       null, // snrTowards will be null until response received
       null, // snrBack will be null until response received
       now,
-      now
+      now,
+      sourceId ?? null
     );
 
     // Keep only the last N traceroutes for this source-destination pair
-    const deleteOldStmt = this.db.prepare(`
-      DELETE FROM traceroutes
-      WHERE fromNodeNum = ? AND toNodeNum = ?
-      AND id NOT IN (
-        SELECT id FROM traceroutes
-        WHERE fromNodeNum = ? AND toNodeNum = ?
-        ORDER BY timestamp DESC
-        LIMIT ?
-      )
-    `);
-    deleteOldStmt.run(fromNodeNum, toNodeNum, fromNodeNum, toNodeNum, TRACEROUTE_HISTORY_LIMIT);
+    const deleteOldStmt = this.db.prepare(
+      sourceId !== undefined
+        ? `DELETE FROM traceroutes
+           WHERE fromNodeNum = ? AND toNodeNum = ? AND sourceId = ?
+           AND id NOT IN (
+             SELECT id FROM traceroutes
+             WHERE fromNodeNum = ? AND toNodeNum = ? AND sourceId = ?
+             ORDER BY timestamp DESC
+             LIMIT ?
+           )`
+        : `DELETE FROM traceroutes
+           WHERE fromNodeNum = ? AND toNodeNum = ?
+           AND id NOT IN (
+             SELECT id FROM traceroutes
+             WHERE fromNodeNum = ? AND toNodeNum = ?
+             ORDER BY timestamp DESC
+             LIMIT ?
+           )`
+    );
+    if (sourceId !== undefined) {
+      deleteOldStmt.run(fromNodeNum, toNodeNum, sourceId, fromNodeNum, toNodeNum, sourceId, TRACEROUTE_HISTORY_LIMIT);
+    } else {
+      deleteOldStmt.run(fromNodeNum, toNodeNum, fromNodeNum, toNodeNum, TRACEROUTE_HISTORY_LIMIT);
+    }
   }
 
   // Auto-traceroute node filter methods
@@ -10593,8 +10647,8 @@ class DatabaseService {
   }
 
   // Group 4: Traceroutes
-  async recordTracerouteRequestAsync(fromNodeNum: number, toNodeNum: number): Promise<void> {
-    await this.recordTracerouteRequest(fromNodeNum, toNodeNum);
+  async recordTracerouteRequestAsync(fromNodeNum: number, toNodeNum: number, sourceId?: string): Promise<void> {
+    await this.recordTracerouteRequest(fromNodeNum, toNodeNum, sourceId);
   }
 
   async getAllTraceroutesForRecalculationAsync(): Promise<any[]> {

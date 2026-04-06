@@ -3622,7 +3622,8 @@ apiRouter.get('/traceroutes/recent', async (req, res) => {
       limit = Math.max(limit, 100);
     }
 
-    const allTraceroutes = await databaseService.traceroutes.getAllTraceroutes(limit);
+    const recentSourceId = typeof req.query.sourceId === 'string' ? req.query.sourceId : undefined;
+    const allTraceroutes = await databaseService.traceroutes.getAllTraceroutes(limit, recentSourceId);
 
     const recentTraceroutes = allTraceroutes.filter(tr => tr.timestamp >= cutoffTime);
 

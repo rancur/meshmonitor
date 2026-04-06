@@ -47,19 +47,21 @@ export class TraceroutesRepository extends BaseRepository {
   /**
    * Find a pending traceroute (with null route) within a timeout window
    */
-  async findPendingTraceroute(fromNodeNum: number, toNodeNum: number, sinceTimestamp: number): Promise<{ id: number } | null> {
+  async findPendingTraceroute(fromNodeNum: number, toNodeNum: number, sinceTimestamp: number, sourceId?: string): Promise<{ id: number } | null> {
     const { traceroutes } = this.tables;
+    const conditions = [
+      eq(traceroutes.fromNodeNum, fromNodeNum),
+      eq(traceroutes.toNodeNum, toNodeNum),
+      isNull(traceroutes.route),
+      gte(traceroutes.timestamp, sinceTimestamp),
+    ];
+    if (sourceId !== undefined) {
+      conditions.push(eq(traceroutes.sourceId, sourceId));
+    }
     const result = await this.db
       .select({ id: traceroutes.id })
       .from(traceroutes)
-      .where(
-        and(
-          eq(traceroutes.fromNodeNum, fromNodeNum),
-          eq(traceroutes.toNodeNum, toNodeNum),
-          isNull(traceroutes.route),
-          gte(traceroutes.timestamp, sinceTimestamp)
-        )
-      )
+      .where(and(...conditions))
       .orderBy(desc(traceroutes.timestamp))
       .limit(1);
     return result.length > 0 ? { id: result[0].id } : null;
@@ -80,24 +82,27 @@ export class TraceroutesRepository extends BaseRepository {
    * Delete old traceroutes for a node pair, keeping only the most recent N.
    * Uses direct DELETE WHERE with notInArray for optimal performance.
    */
-  async cleanupOldTraceroutesForPair(fromNodeNum: number, toNodeNum: number, keepCount: number): Promise<void> {
+  async cleanupOldTraceroutesForPair(fromNodeNum: number, toNodeNum: number, keepCount: number, sourceId?: string): Promise<void> {
     const { traceroutes } = this.tables;
+    const baseConditions = [
+      eq(traceroutes.fromNodeNum, fromNodeNum),
+      eq(traceroutes.toNodeNum, toNodeNum),
+    ];
+    if (sourceId !== undefined) {
+      baseConditions.push(eq(traceroutes.sourceId, sourceId));
+    }
     // Get IDs to keep (most recent N)
     const toKeep = await this.db
       .select({ id: traceroutes.id })
       .from(traceroutes)
-      .where(and(
-        eq(traceroutes.fromNodeNum, fromNodeNum),
-        eq(traceroutes.toNodeNum, toNodeNum)
-      ))
+      .where(and(...baseConditions))
       .orderBy(desc(traceroutes.timestamp))
       .limit(keepCount);
     const keepIds = toKeep.map((r: any) => r.id);
     if (keepIds.length > 0) {
       // Delete all except the ones to keep in a single statement
       await this.db.delete(traceroutes).where(and(
-        eq(traceroutes.fromNodeNum, fromNodeNum),
-        eq(traceroutes.toNodeNum, toNodeNum),
+        ...baseConditions,
         notInArray(traceroutes.id, keepIds)
       ));
     }

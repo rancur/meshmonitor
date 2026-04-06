@@ -2718,7 +2718,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ destination: nodeNum }),
+        body: JSON.stringify({ destination: nodeNum, sourceId }),
       });
 
       logger.debug(`🗺️ Traceroute request sent to ${nodeId}`);

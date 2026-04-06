@@ -4017,7 +4017,7 @@ class MeshtasticManager implements ISourceManager {
         const toNum = meshPacket.to ? Number(meshPacket.to) : 0;
         const localNodeNum = this.localNodeInfo?.nodeNum;
         if (fromNum !== localNodeNum) {
-          await databaseService.recordTracerouteRequestAsync(fromNum, toNum);
+          await databaseService.recordTracerouteRequestAsync(fromNum, toNum, this.sourceId ?? undefined);
         }
       }
     }
@@ -5376,7 +5376,7 @@ class MeshtasticManager implements ISourceManager {
 
       // Use DatabaseService.insertTraceroute() (not repo directly) for deduplication:
       // It checks for pending traceroute requests and updates them instead of inserting duplicates
-      databaseService.insertTraceroute(tracerouteRecord);
+      databaseService.insertTraceroute(tracerouteRecord, this.sourceId ?? undefined);
 
       // Store traceroute hop count as telemetry for Smart Hops tracking
       // Hop count is route.length + 1 (intermediate hops + final hop to destination)
@@ -6689,7 +6689,7 @@ class MeshtasticManager implements ISourceManager {
         }
       }
 
-      await databaseService.recordTracerouteRequestAsync(this.localNodeInfo.nodeNum, destination);
+      await databaseService.recordTracerouteRequestAsync(this.localNodeInfo.nodeNum, destination, this.sourceId ?? undefined);
       logger.info(`📤 Traceroute request sent from ${this.localNodeInfo.nodeId} to !${destination.toString(16).padStart(8, '0')}`);
 
       // Log outgoing traceroute to packet monitor
