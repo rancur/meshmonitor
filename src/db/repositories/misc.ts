@@ -147,31 +147,44 @@ export class MiscRepository extends BaseRepository {
   // ============ AUTO-TRACEROUTE NODES ============
 
   /**
-   * Get all auto-traceroute nodes
+   * Get all auto-traceroute nodes.
+   * When sourceId is provided, return only rows scoped to that source OR
+   * legacy unscoped rows (sourceId IS NULL). When omitted, return everything.
    */
-  async getAutoTracerouteNodes(): Promise<number[]> {
+  async getAutoTracerouteNodes(sourceId?: string): Promise<number[]> {
     const { autoTracerouteNodes } = this.tables;
-    const results = await this.db
+    const query = this.db
       .select({ nodeNum: autoTracerouteNodes.nodeNum })
-      .from(autoTracerouteNodes)
-      .orderBy(asc(autoTracerouteNodes.createdAt));
+      .from(autoTracerouteNodes);
+    const results = sourceId
+      ? await query
+          .where(eq(autoTracerouteNodes.sourceId, sourceId))
+          .orderBy(asc(autoTracerouteNodes.createdAt))
+      : await query.orderBy(asc(autoTracerouteNodes.createdAt));
     return results.map((r: any) => Number(r.nodeNum));
   }
 
   /**
-   * Set auto-traceroute nodes (replaces all existing entries)
+   * Set auto-traceroute nodes (replaces all existing entries for the given
+   * source, or globally when sourceId is omitted).
    */
-  async setAutoTracerouteNodes(nodeNums: number[]): Promise<void> {
+  async setAutoTracerouteNodes(nodeNums: number[], sourceId?: string): Promise<void> {
     const now = this.now();
     const { autoTracerouteNodes } = this.tables;
 
-    // Delete all existing entries
-    await this.db.delete(autoTracerouteNodes);
+    // Delete existing entries scoped to this source (or all when unscoped).
+    if (sourceId) {
+      await this.db
+        .delete(autoTracerouteNodes)
+        .where(eq(autoTracerouteNodes.sourceId, sourceId));
+    } else {
+      await this.db.delete(autoTracerouteNodes);
+    }
     // Insert new entries
     for (const nodeNum of nodeNums) {
       await this.db
         .insert(autoTracerouteNodes)
-        .values({ nodeNum, createdAt: now });
+        .values({ nodeNum, createdAt: now, sourceId: sourceId ?? null });
     }
   }
 
@@ -179,19 +192,29 @@ export class MiscRepository extends BaseRepository {
    * Add a single auto-traceroute node.
    * Keeps branching: MySQL lacks onConflictDoNothing.
    */
-  async addAutoTracerouteNode(nodeNum: number): Promise<void> {
+  async addAutoTracerouteNode(nodeNum: number, sourceId?: string): Promise<void> {
     const now = this.now();
     const { autoTracerouteNodes } = this.tables;
 
-    await this.insertIgnore(autoTracerouteNodes, { nodeNum, createdAt: now });
+    await this.insertIgnore(autoTracerouteNodes, {
+      nodeNum,
+      createdAt: now,
+      sourceId: sourceId ?? null,
+    });
   }
 
   /**
    * Remove a single auto-traceroute node
    */
-  async removeAutoTracerouteNode(nodeNum: number): Promise<void> {
+  async removeAutoTracerouteNode(nodeNum: number, sourceId?: string): Promise<void> {
     const { autoTracerouteNodes } = this.tables;
-    await this.db.delete(autoTracerouteNodes).where(eq(autoTracerouteNodes.nodeNum, nodeNum));
+    const where = sourceId
+      ? and(
+          eq(autoTracerouteNodes.nodeNum, nodeNum),
+          eq(autoTracerouteNodes.sourceId, sourceId)
+        )
+      : eq(autoTracerouteNodes.nodeNum, nodeNum);
+    await this.db.delete(autoTracerouteNodes).where(where);
   }
 
   // ============ UPGRADE HISTORY ============

@@ -5308,8 +5308,8 @@ class DatabaseService {
       const filterEnabled = this.isAutoTracerouteNodeFilterEnabled();
 
       if (filterEnabled) {
-        // Get all filter settings (use async for specificNodes)
-        const specificNodes = await this.misc.getAutoTracerouteNodes();
+        // Get all filter settings (use async for specificNodes; scope to source)
+        const specificNodes = await this.misc.getAutoTracerouteNodes(sourceId);
         const filterChannels = this.getTracerouteFilterChannels();
         const filterRoles = this.getTracerouteFilterRoles();
         const filterHwModels = this.getTracerouteFilterHwModels();
@@ -5952,7 +5952,7 @@ class DatabaseService {
   }
 
   // Async versions of traceroute filter settings methods
-  async getTracerouteFilterSettingsAsync(): Promise<{
+  async getTracerouteFilterSettingsAsync(sourceId?: string): Promise<{
     enabled: boolean;
     nodeNums: number[];
     filterChannels: number[];
@@ -5972,7 +5972,7 @@ class DatabaseService {
     filterHopsMin: number;
     filterHopsMax: number;
   }> {
-    const nodeNums = await this.misc.getAutoTracerouteNodes();
+    const nodeNums = await this.misc.getAutoTracerouteNodes(sourceId);
     return {
       enabled: this.isAutoTracerouteNodeFilterEnabled(),
       nodeNums,
@@ -6014,9 +6014,9 @@ class DatabaseService {
     filterHopsEnabled?: boolean;
     filterHopsMin?: number;
     filterHopsMax?: number;
-  }): Promise<void> {
+  }, sourceId?: string): Promise<void> {
     this.setAutoTracerouteNodeFilterEnabled(settings.enabled);
-    await this.misc.setAutoTracerouteNodes(settings.nodeNums);
+    await this.misc.setAutoTracerouteNodes(settings.nodeNums, sourceId);
     this.setTracerouteFilterChannels(settings.filterChannels);
     this.setTracerouteFilterRoles(settings.filterRoles);
     this.setTracerouteFilterHwModels(settings.filterHwModels);
@@ -6061,13 +6061,13 @@ class DatabaseService {
   }
 
   // Auto-traceroute log methods
-  logAutoTracerouteAttempt(toNodeNum: number, toNodeName: string | null): number {
+  logAutoTracerouteAttempt(toNodeNum: number, toNodeName: string | null, sourceId?: string): number {
     const now = Date.now();
     const stmt = this.db.prepare(`
-      INSERT INTO auto_traceroute_log (timestamp, to_node_num, to_node_name, success, created_at)
-      VALUES (?, ?, ?, NULL, ?)
+      INSERT INTO auto_traceroute_log (timestamp, to_node_num, to_node_name, success, created_at, sourceId)
+      VALUES (?, ?, ?, NULL, ?, ?)
     `);
-    const result = stmt.run(now, toNodeNum, toNodeName, now);
+    const result = stmt.run(now, toNodeNum, toNodeName, now, sourceId ?? null);
 
     // Clean up old entries (keep last 100)
     const cleanupStmt = this.db.prepare(`
@@ -6105,7 +6105,7 @@ class DatabaseService {
     stmt.run(success ? 1 : 0, toNodeNum);
   }
 
-  getAutoTracerouteLog(limit: number = 10): {
+  getAutoTracerouteLog(limit: number = 10, sourceId?: string): {
     id: number;
     timestamp: number;
     toNodeNum: number;
@@ -6117,13 +6117,21 @@ class DatabaseService {
       return [];
     }
 
-    const stmt = this.db.prepare(`
-      SELECT id, timestamp, to_node_num as toNodeNum, to_node_name as toNodeName, success
-      FROM auto_traceroute_log
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `);
-    const results = stmt.all(limit) as {
+    const stmt = sourceId
+      ? this.db.prepare(`
+          SELECT id, timestamp, to_node_num as toNodeNum, to_node_name as toNodeName, success
+          FROM auto_traceroute_log
+          WHERE sourceId = ?
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `)
+      : this.db.prepare(`
+          SELECT id, timestamp, to_node_num as toNodeNum, to_node_name as toNodeName, success
+          FROM auto_traceroute_log
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `);
+    const results = (sourceId ? stmt.all(sourceId, limit) : stmt.all(limit)) as {
       id: number;
       timestamp: number;
       toNodeNum: number;
@@ -6140,7 +6148,7 @@ class DatabaseService {
   /**
    * Async version of getAutoTracerouteLog - works with all database backends
    */
-  async getAutoTracerouteLogAsync(limit: number = 10): Promise<{
+  async getAutoTracerouteLogAsync(limit: number = 10, sourceId?: string): Promise<{
     id: number;
     timestamp: number;
     toNodeNum: number;
@@ -6149,23 +6157,33 @@ class DatabaseService {
   }[]> {
     if (!this.drizzleDatabase || this.drizzleDbType === 'sqlite') {
       // Fallback to sync for SQLite
-      return this.getAutoTracerouteLog(limit);
+      return this.getAutoTracerouteLog(limit, sourceId);
     }
 
     try {
       let results: any[] = [];
 
       if (this.drizzleDbType === 'postgres' && this.postgresPool) {
-        const result = await this.postgresPool.query(
-          `SELECT id, timestamp, to_node_num, to_node_name, success FROM auto_traceroute_log ORDER BY timestamp DESC LIMIT $1`,
-          [limit]
-        );
+        const result = sourceId
+          ? await this.postgresPool.query(
+              `SELECT id, timestamp, to_node_num, to_node_name, success FROM auto_traceroute_log WHERE "sourceId" = $1 ORDER BY timestamp DESC LIMIT $2`,
+              [sourceId, limit]
+            )
+          : await this.postgresPool.query(
+              `SELECT id, timestamp, to_node_num, to_node_name, success FROM auto_traceroute_log ORDER BY timestamp DESC LIMIT $1`,
+              [limit]
+            );
         results = result.rows || [];
       } else if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
-        const [rows] = await this.mysqlPool.query(
-          `SELECT id, timestamp, to_node_num, to_node_name, success FROM auto_traceroute_log ORDER BY timestamp DESC LIMIT ?`,
-          [limit]
-        );
+        const [rows] = sourceId
+          ? await this.mysqlPool.query(
+              `SELECT id, timestamp, to_node_num, to_node_name, success FROM auto_traceroute_log WHERE sourceId = ? ORDER BY timestamp DESC LIMIT ?`,
+              [sourceId, limit]
+            )
+          : await this.mysqlPool.query(
+              `SELECT id, timestamp, to_node_num, to_node_name, success FROM auto_traceroute_log ORDER BY timestamp DESC LIMIT ?`,
+              [limit]
+            );
         results = rows as any[] || [];
       }
 
@@ -6185,10 +6203,10 @@ class DatabaseService {
   /**
    * Async version of logAutoTracerouteAttempt - works with all database backends
    */
-  async logAutoTracerouteAttemptAsync(toNodeNum: number, toNodeName: string | null): Promise<number> {
+  async logAutoTracerouteAttemptAsync(toNodeNum: number, toNodeName: string | null, sourceId?: string): Promise<number> {
     if (!this.drizzleDatabase || this.drizzleDbType === 'sqlite') {
       // Fallback to sync for SQLite
-      return this.logAutoTracerouteAttempt(toNodeNum, toNodeName);
+      return this.logAutoTracerouteAttempt(toNodeNum, toNodeName, sourceId);
     }
 
     const now = Date.now();
@@ -6198,9 +6216,9 @@ class DatabaseService {
 
       if (this.drizzleDbType === 'postgres' && this.postgresPool) {
         const result = await this.postgresPool.query(
-          `INSERT INTO auto_traceroute_log (timestamp, to_node_num, to_node_name, success, created_at)
-           VALUES ($1, $2, $3, NULL, $4) RETURNING id`,
-          [now, toNodeNum, toNodeName, now]
+          `INSERT INTO auto_traceroute_log (timestamp, to_node_num, to_node_name, success, created_at, "sourceId")
+           VALUES ($1, $2, $3, NULL, $4, $5) RETURNING id`,
+          [now, toNodeNum, toNodeName, now, sourceId ?? null]
         );
         insertedId = result.rows[0]?.id || 0;
 
@@ -6215,9 +6233,9 @@ class DatabaseService {
         `);
       } else if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
         const [result] = await this.mysqlPool.query(
-          `INSERT INTO auto_traceroute_log (timestamp, to_node_num, to_node_name, success, created_at)
-           VALUES (?, ?, ?, NULL, ?)`,
-          [now, toNodeNum, toNodeName, now]
+          `INSERT INTO auto_traceroute_log (timestamp, to_node_num, to_node_name, success, created_at, sourceId)
+           VALUES (?, ?, ?, NULL, ?, ?)`,
+          [now, toNodeNum, toNodeName, now, sourceId ?? null]
         ) as any;
         insertedId = result.insertId || 0;
 

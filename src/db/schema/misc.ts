@@ -169,16 +169,18 @@ export const solarEstimatesPostgres = pgTable('solar_estimates', {
 
 export const autoTracerouteNodesSqlite = sqliteTable('auto_traceroute_nodes', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  nodeNum: integer('nodeNum').notNull().unique(),
+  nodeNum: integer('nodeNum').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).default(true),
   createdAt: integer('createdAt').notNull(),
+  sourceId: text('sourceId'),
 });
 
 export const autoTracerouteNodesPostgres = pgTable('auto_traceroute_nodes', {
   id: pgSerial('id').primaryKey(),
-  nodeNum: pgBigint('nodeNum', { mode: 'number' }).notNull().unique(),
+  nodeNum: pgBigint('nodeNum', { mode: 'number' }).notNull(),
   enabled: pgBoolean('enabled').default(true),
   createdAt: pgBigint('createdAt', { mode: 'number' }).notNull(),
+  sourceId: pgText('sourceId'),
 });
 
 // ============ AUTO TIME SYNC NODES ============
@@ -206,6 +208,7 @@ export const autoTracerouteLogSqlite = sqliteTable('auto_traceroute_log', {
   toNodeName: text('to_node_name'),
   success: integer('success'),
   createdAt: integer('created_at'),
+  sourceId: text('sourceId'),
 });
 
 export const autoTracerouteLogPostgres = pgTable('auto_traceroute_log', {
@@ -215,6 +218,7 @@ export const autoTracerouteLogPostgres = pgTable('auto_traceroute_log', {
   toNodeName: pgText('to_node_name'),
   success: pgInteger('success'),
   createdAt: pgBigint('created_at', { mode: 'number' }),
+  sourceId: pgText('sourceId'),
 });
 
 // ============ AUTO KEY REPAIR STATE ============
@@ -371,9 +375,10 @@ export const solarEstimatesMysql = mysqlTable('solar_estimates', {
 
 export const autoTracerouteNodesMysql = mysqlTable('auto_traceroute_nodes', {
   id: mySerial('id').primaryKey(),
-  nodeNum: myBigint('nodeNum', { mode: 'number' }).notNull().unique(),
+  nodeNum: myBigint('nodeNum', { mode: 'number' }).notNull(),
   enabled: myBoolean('enabled').default(true),
   createdAt: myBigint('createdAt', { mode: 'number' }).notNull(),
+  sourceId: myVarchar('sourceId', { length: 64 }),
 });
 
 export const autoTimeSyncNodesMysql = mysqlTable('auto_time_sync_nodes', {
@@ -390,6 +395,7 @@ export const autoTracerouteLogMysql = mysqlTable('auto_traceroute_log', {
   toNodeName: myText('to_node_name'),
   success: myInt('success'),
   createdAt: myBigint('created_at', { mode: 'number' }),
+  sourceId: myVarchar('sourceId', { length: 64 }),
 });
 
 export const autoKeyRepairStateMysql = mysqlTable('auto_key_repair_state', {

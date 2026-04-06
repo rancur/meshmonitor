@@ -5293,9 +5293,10 @@ apiRouter.post('/settings/traceroute-interval', requirePermission('settings', 'w
 });
 
 // Get auto-traceroute node filter settings
-apiRouter.get('/settings/traceroute-nodes', requirePermission('settings', 'read'), async (_req, res) => {
+apiRouter.get('/settings/traceroute-nodes', requirePermission('settings', 'read'), async (req, res) => {
   try {
-    const settings = await databaseService.getTracerouteFilterSettingsAsync();
+    const traceNodesSourceId = req.query.sourceId as string | undefined;
+    const settings = await databaseService.getTracerouteFilterSettingsAsync(traceNodesSourceId);
     res.json(settings);
   } catch (error) {
     logger.error('Error fetching auto-traceroute node filter:', error);
@@ -5449,7 +5450,8 @@ apiRouter.post('/settings/traceroute-nodes', requirePermission('settings', 'writ
       return res.status(400).json({ error: 'filterHopsMin cannot be greater than filterHopsMax.' });
     }
 
-    // Update all settings
+    // Update all settings (scoped to source when provided)
+    const traceNodesPostSourceId = (req.query.sourceId as string | undefined) || (req.body?.sourceId as string | undefined);
     await databaseService.setTracerouteFilterSettingsAsync({
       enabled,
       nodeNums,
@@ -5469,10 +5471,10 @@ apiRouter.post('/settings/traceroute-nodes', requirePermission('settings', 'writ
       filterHopsEnabled: validatedFilterHopsEnabled,
       filterHopsMin: validatedFilterHopsMin,
       filterHopsMax: validatedFilterHopsMax,
-    });
+    }, traceNodesPostSourceId);
 
     // Get the updated settings to return (includes resolved default values)
-    const updatedSettings = await databaseService.getTracerouteFilterSettingsAsync();
+    const updatedSettings = await databaseService.getTracerouteFilterSettingsAsync(traceNodesPostSourceId);
 
     res.json({
       success: true,
@@ -5485,9 +5487,10 @@ apiRouter.post('/settings/traceroute-nodes', requirePermission('settings', 'writ
 });
 
 // Get auto-traceroute log (recent auto-traceroute attempts with success/fail status)
-apiRouter.get('/settings/traceroute-log', requirePermission('settings', 'read'), async (_req, res) => {
+apiRouter.get('/settings/traceroute-log', requirePermission('settings', 'read'), async (req, res) => {
   try {
-    const log = await databaseService.getAutoTracerouteLogAsync(10);
+    const traceLogSourceId = req.query.sourceId as string | undefined;
+    const log = await databaseService.getAutoTracerouteLogAsync(10, traceLogSourceId);
     res.json({
       success: true,
       log,

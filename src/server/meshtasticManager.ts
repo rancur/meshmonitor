@@ -1060,7 +1060,7 @@ class MeshtasticManager implements ISourceManager {
             logger.info(`🗺️ Auto-traceroute: Sending traceroute to ${targetName} (${targetNode.nodeId}) on channel ${channel}`);
 
             // Log the auto-traceroute attempt to database
-            await databaseService.logAutoTracerouteAttemptAsync(targetNode.nodeNum, targetName);
+            await databaseService.logAutoTracerouteAttemptAsync(targetNode.nodeNum, targetName, this.sourceId);
             this.pendingAutoTraceroutes.add(targetNode.nodeNum);
             this.pendingTracerouteTimestamps.set(targetNode.nodeNum, Date.now());
 

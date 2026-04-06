@@ -35,6 +35,7 @@ import { migration as createSourcesMigration, runMigration020Postgres, runMigrat
 import { migration as addSourceIdColumnsMigration, runMigration021Postgres, runMigration021Mysql } from '../server/migrations/021_add_source_id_columns.js';
 import { migration as addSourceIdToPermissionsMigration, runMigration022Postgres, runMigration022Mysql } from '../server/migrations/022_add_source_id_to_permissions.js';
 import { migration as multiSourceChannelsMigration, runMigration023Postgres, runMigration023Mysql } from '../server/migrations/023_multi_source_channels.js';
+import { migration as addSourceIdToTracerouteTablesMigration, runMigration024Postgres, runMigration024Mysql } from '../server/migrations/024_add_source_id_to_traceroute_tables.js';
 
 // ============================================================================
 // Registry
@@ -319,4 +320,19 @@ registry.register({
   sqlite: (db) => multiSourceChannelsMigration.up(db),
   postgres: (client) => runMigration023Postgres(client),
   mysql: (pool) => runMigration023Mysql(pool),
+});
+
+// ---------------------------------------------------------------------------
+// Migration 024: Per-source auto-traceroute scheduler (Phase 2b)
+// Adds sourceId to auto_traceroute_nodes and auto_traceroute_log, replaces
+// UNIQUE(nodeNum) with UNIQUE(nodeNum, sourceId).
+// ---------------------------------------------------------------------------
+
+registry.register({
+  number: 24,
+  name: 'add_source_id_to_traceroute_tables',
+  settingsKey: 'migration_024_add_source_id_to_traceroute_tables',
+  sqlite: (db) => addSourceIdToTracerouteTablesMigration.up(db),
+  postgres: (client) => runMigration024Postgres(client),
+  mysql: (pool) => runMigration024Mysql(pool),
 });
