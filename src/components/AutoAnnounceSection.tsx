@@ -98,11 +98,12 @@ const AutoAnnounceSection: React.FC<AutoAnnounceSectionProps> = ({
     setLocalNodeInfoDelaySeconds(nodeInfoDelaySeconds);
   }, [enabled, intervalHours, message, channelIndexes, announceOnStart, useSchedule, schedule, nodeInfoEnabled, nodeInfoChannels, nodeInfoDelaySeconds]);
 
-  // Fetch last announcement time
+  // Fetch last announcement time (per-source)
   useEffect(() => {
+    setLastAnnouncementTime(null);
     const fetchLastAnnouncementTime = async () => {
       try {
-        const response = await fetch(`${baseUrl}/api/announce/last`);
+        const response = await fetch(`${baseUrl}/api/announce/last${sourceQuery}`);
         if (response.ok) {
           const data = await response.json();
           setLastAnnouncementTime(data.lastAnnouncementTime);
@@ -116,7 +117,7 @@ const AutoAnnounceSection: React.FC<AutoAnnounceSectionProps> = ({
     // Refresh every 30 seconds
     const interval = setInterval(fetchLastAnnouncementTime, 30000);
     return () => clearInterval(interval);
-  }, [baseUrl]);
+  }, [baseUrl, sourceQuery]);
 
   // Validate cron expression whenever it changes
   useEffect(() => {

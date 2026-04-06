@@ -62,7 +62,7 @@ class AutoDeleteByDistanceService {
   /**
    * Core deletion logic
    */
-  private async runDeleteCycle(sourceId?: string): Promise<{ deletedCount: number }> {
+  public async runDeleteCycle(sourceId?: string): Promise<{ deletedCount: number }> {
     if (this.isRunning) {
       logger.debug('⏭️ Auto-delete-by-distance: skipping, already running');
       return { deletedCount: 0 };

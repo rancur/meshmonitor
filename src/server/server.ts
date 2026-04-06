@@ -633,12 +633,9 @@ setTimeout(async () => {
     inactiveNodeNotificationService.start(inactiveThresholdHours, inactiveCheckIntervalMinutes, inactiveCooldownHours);
     logger.info('✅ Inactive node notification service started');
 
-    // Start auto-delete-by-distance service if enabled
-    const autoDeleteByDistanceEnabled = await databaseService.settings.getSetting('autoDeleteByDistanceEnabled');
-    if (autoDeleteByDistanceEnabled === 'true') {
-      const intervalHours = parseInt(await databaseService.settings.getSetting('autoDeleteByDistanceIntervalHours') || '24', 10);
-      autoDeleteByDistanceService.start(intervalHours);
-    }
+    // Auto-delete-by-distance scheduler is now started per-source inside
+    // MeshtasticManager.startDistanceDeleteScheduler() as part of the normal
+    // scheduler stagger after configComplete.
 
     // Note: Virtual node server initialization has been moved to a callback
     // that triggers when config capture completes (see registerConfigCaptureCompleteCallback above)
@@ -6020,8 +6017,12 @@ apiRouter.post('/announce/send', requirePermission('automation', 'write'), async
       ? (sourceManagerRegistry.getManager(announceSourceId) as typeof meshtasticManager ?? meshtasticManager)
       : meshtasticManager);
     await announceManager.sendAutoAnnouncement();
-    // Update last announcement time
-    await databaseService.settings.setSetting('lastAnnouncementTime', Date.now().toString());
+    // Update last announcement time (per-source when known)
+    if (announceSourceId) {
+      await databaseService.settings.setSourceSetting(announceSourceId, 'lastAnnouncementTime', Date.now().toString());
+    } else {
+      await databaseService.settings.setSetting('lastAnnouncementTime', Date.now().toString());
+    }
     res.json({ success: true, message: 'Announcement sent successfully' });
   } catch (error) {
     logger.error('Error sending announcement:', error);
@@ -6029,9 +6030,10 @@ apiRouter.post('/announce/send', requirePermission('automation', 'write'), async
   }
 });
 
-apiRouter.get('/announce/last', requirePermission('automation', 'read'), async (_req, res) => {
+apiRouter.get('/announce/last', requirePermission('automation', 'read'), async (req, res) => {
   try {
-    const lastAnnouncementTime = await databaseService.settings.getSetting('lastAnnouncementTime');
+    const announceLastSourceId = (req.query.sourceId as string) || null;
+    const lastAnnouncementTime = await databaseService.settings.getSettingForSource(announceLastSourceId, 'lastAnnouncementTime');
     res.json({ lastAnnouncementTime: lastAnnouncementTime ? parseInt(lastAnnouncementTime) : null });
   } catch (error) {
     logger.error('Error fetching last announcement time:', error);
