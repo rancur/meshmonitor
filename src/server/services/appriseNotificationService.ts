@@ -7,6 +7,10 @@ export interface AppriseNotificationPayload {
   title: string;
   body: string;
   type?: 'info' | 'success' | 'warning' | 'failure' | 'error';
+  /** Phase B: source this notification originated from (required). */
+  sourceId: string;
+  /** Phase B: human-readable source name used to prefix title/body. */
+  sourceName: string;
 }
 
 interface AppriseConfig {
@@ -15,7 +19,7 @@ interface AppriseConfig {
 }
 
 class AppriseNotificationService {
-  private config: AppriseConfig | null = null;
+  private initialized = false;
   private initPromise: Promise<void> | null = null;
 
   constructor() {
@@ -24,43 +28,17 @@ class AppriseNotificationService {
   }
 
   /**
-   * Async initialization that waits for the database to be ready
+   * Async initialization that waits for the database to be ready.
+   * Phase B: per-source settings are resolved at dispatch time, not cached here.
    */
   private async initializeAsync(): Promise<void> {
     try {
-      // Wait for the database to be ready before accessing settings
       await databaseService.waitForReady();
-
-      // Default to internal Apprise API (bundled in container)
-      const appriseUrl = await databaseService.settings.getSetting('apprise_url') || 'http://localhost:8000';
-      const enabledSetting = await databaseService.settings.getSetting('apprise_enabled');
-
-      // Default to enabled if not explicitly set (backward compatibility)
-      const enabled = enabledSetting !== 'false';
-
-      // If not set, initialize it to 'true'
-      if (enabledSetting === null || enabledSetting === undefined) {
-        await databaseService.settings.setSetting('apprise_enabled', 'true');
-      }
-
-      this.config = {
-        url: appriseUrl,
-        enabled
-      };
-
-      if (enabled) {
-        logger.info(`✅ Apprise notification service configured at ${appriseUrl}`);
-      } else {
-        logger.debug('ℹ️  Apprise notifications disabled');
-      }
+      this.initialized = true;
+      logger.info('✅ Apprise notification service initialized (per-source config resolved at dispatch time)');
     } catch (error) {
-      // Database not ready or settings table doesn't exist (e.g., during tests)
       logger.debug('⚠️ Could not initialize Apprise notification service:', error);
-      // Default to disabled state
-      this.config = {
-        url: 'http://localhost:8000',
-        enabled: false
-      };
+      this.initialized = false;
     }
   }
 
@@ -74,22 +52,45 @@ class AppriseNotificationService {
   }
 
   /**
-   * Check if Apprise is configured and enabled
+   * Check if Apprise service is initialized. Per-source enabled/URL is checked at dispatch.
    */
   public isAvailable(): boolean {
-    return this.config !== null && this.config.enabled;
+    return this.initialized;
+  }
+
+  /**
+   * Resolve Apprise URL for a given source (no global fallback per Phase B policy).
+   */
+  private async resolveAppriseConfig(sourceId: string): Promise<AppriseConfig | null> {
+    try {
+      const url = await databaseService.settings.getSettingForSource(sourceId, 'apprise_url');
+      const enabledSetting = await databaseService.settings.getSettingForSource(sourceId, 'apprise_enabled');
+      if (!url) {
+        logger.debug(`ℹ️ No apprise_url configured for source ${sourceId}`);
+        return null;
+      }
+      // Default to enabled unless explicitly 'false'
+      const enabled = enabledSetting !== 'false';
+      return { url, enabled };
+    } catch (error) {
+      logger.error(`Failed to resolve Apprise config for source ${sourceId}:`, error);
+      return null;
+    }
   }
 
   /**
    * Test connection to Apprise API
    */
-  public async testConnection(): Promise<{ success: boolean; message: string; details?: any }> {
-    if (!this.config) {
-      return { success: false, message: 'Apprise not configured' };
+  public async testConnection(sourceId?: string): Promise<{ success: boolean; message: string; details?: any }> {
+    // TODO Phase D: sourceId should be required from routes
+    const effectiveSourceId = sourceId ?? 'default';
+    const config = await this.resolveAppriseConfig(effectiveSourceId);
+    if (!config) {
+      return { success: false, message: `Apprise not configured for source ${effectiveSourceId}` };
     }
 
     try {
-      const response = await fetch(`${this.config.url}/health`, {
+      const response = await fetch(`${config.url}/health`, {
         method: 'GET',
         signal: AbortSignal.timeout(5000)
       });
@@ -120,13 +121,16 @@ class AppriseNotificationService {
   /**
    * Configure Apprise URLs
    */
-  public async configureUrls(urls: string[]): Promise<{ success: boolean; message: string }> {
-    if (!this.config) {
-      return { success: false, message: 'Apprise not configured' };
+  public async configureUrls(urls: string[], sourceId?: string): Promise<{ success: boolean; message: string }> {
+    // TODO Phase D: sourceId should be required from routes
+    const effectiveSourceId = sourceId ?? 'default';
+    const config = await this.resolveAppriseConfig(effectiveSourceId);
+    if (!config) {
+      return { success: false, message: `Apprise not configured for source ${effectiveSourceId}` };
     }
 
     try {
-      const response = await fetch(`${this.config.url}/config`, {
+      const response = await fetch(`${config.url}/config`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -182,9 +186,16 @@ class AppriseNotificationService {
       return false;
     }
 
+    // Resolve per-source apprise API endpoint
+    const config = await this.resolveAppriseConfig(payload.sourceId);
+    if (!config || !config.enabled) {
+      logger.debug(`ℹ️ Apprise disabled or not configured for source ${payload.sourceId}`);
+      return false;
+    }
+
     try {
       // Apprise API supports sending to specific URLs via the 'urls' parameter
-      const response = await fetch(`${this.config!.url}/notify`, {
+      const response = await fetch(`${config.url}/notify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -230,12 +241,28 @@ class AppriseNotificationService {
       channelId: number;
       isDirectMessage: boolean;
       viaMqtt?: boolean;
+      sourceId: string;
+      sourceName: string;
     }
   ): Promise<{ sent: number; failed: number; filtered: number }> {
     if (!this.isAvailable()) {
       logger.debug('⚠️  Apprise not available, skipping broadcast');
       return { sent: 0, failed: 0, filtered: 0 };
     }
+
+    // Resolve per-source apprise config — no global fallback
+    const config = await this.resolveAppriseConfig(filterContext.sourceId);
+    if (!config || !config.enabled) {
+      logger.debug(`ℹ️ Apprise not enabled for source ${filterContext.sourceId}, skipping`);
+      return { sent: 0, failed: 0, filtered: 0 };
+    }
+
+    // Prefix title + body with source name
+    const prefixedPayload: AppriseNotificationPayload = {
+      ...payload,
+      title: `[${filterContext.sourceName}] ${payload.title}`,
+      body: `[${filterContext.sourceName}] ${payload.body}`,
+    };
 
     // Get users who have Apprise enabled
     const users = await this.getUsersWithAppriseEnabledAsync();
@@ -273,11 +300,11 @@ class AppriseNotificationService {
         continue;
       }
 
-      // Apply node name prefix if user has it enabled
-      const prefixedBody = await applyNodeNamePrefixAsync(userId, payload.body, localNodeName);
-      const notificationPayload = prefixedBody !== payload.body
-        ? { ...payload, body: prefixedBody }
-        : payload;
+      // Apply node name prefix if user has it enabled (per-source prefs)
+      const prefixedBody = await applyNodeNamePrefixAsync(userId, prefixedPayload.body, localNodeName, filterContext.sourceId);
+      const notificationPayload = prefixedBody !== prefixedPayload.body
+        ? { ...prefixedPayload, body: prefixedBody }
+        : prefixedPayload;
 
       // Send to user's specific URLs
       const success = await this.sendNotificationToUrls(notificationPayload, prefs.appriseUrls);
@@ -320,12 +347,26 @@ class AppriseNotificationService {
       channelId: number;
       isDirectMessage: boolean;
       viaMqtt?: boolean;
+      sourceId: string;
+      sourceName: string;
     }
   ): Promise<boolean> {
-    // Check if user has Apprise enabled
-    const prefs = await getUserNotificationPreferencesAsync(userId);
+    // Phase B: permission check
+    try {
+      const allowed = await databaseService.checkPermissionAsync(userId, 'messages', 'read', filterContext.sourceId);
+      if (!allowed) {
+        logger.debug(`🔒 User ${userId} lacks messages:read on source ${filterContext.sourceId}`);
+        return true;
+      }
+    } catch (error) {
+      logger.error(`Permission check failed for user ${userId}:`, error);
+      return true;
+    }
+
+    // Check if user has Apprise enabled (per-source)
+    const prefs = await getUserNotificationPreferencesAsync(userId, filterContext.sourceId);
     if (prefs && !prefs.enableApprise) {
-      logger.debug(`🔇 Apprise disabled for user ${userId}`);
+      logger.debug(`🔇 Apprise disabled for user ${userId} on source ${filterContext.sourceId}`);
       return true; // Filter - user has disabled Apprise
     }
 
@@ -346,6 +387,7 @@ class AppriseNotificationService {
     let failed = 0;
     let filtered = 0;
 
+    // TODO Phase C: scope preference broadcasts by sourceId once callers pass one
     // Get all users with Apprise enabled and this preference enabled
     const users = await getUsersWithServiceEnabledAsync('apprise');
     logger.info(`📢 Broadcasting ${preferenceKey} notification to ${users.length} Apprise users${targetUserId ? ` (target user: ${targetUserId})` : ''}`);

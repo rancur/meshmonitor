@@ -7152,16 +7152,24 @@ class MeshtasticManager implements ISourceManager {
             messageId: message.id,
           };
 
+      // Phase B: resolve source name for prefixing
+      const source = await databaseService.sources.getSource(this.sourceId);
+      const sourceName = source?.name || this.sourceId;
+
       // Send notifications (Web Push + Apprise) with filtering to all subscribed users
       const result = await notificationService.broadcast({
         title,
         body,
-        data: navigationData
+        data: navigationData,
+        sourceId: this.sourceId,
+        sourceName,
       }, {
         messageText,
         channelId: message.channel,
         isDirectMessage,
-        viaMqtt: message.viaMqtt === true
+        viaMqtt: message.viaMqtt === true,
+        sourceId: this.sourceId,
+        sourceName,
       });
 
       logger.debug(

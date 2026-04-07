@@ -19,6 +19,10 @@ export interface DesktopNotificationPayload {
   title: string;
   body: string;
   type?: 'info' | 'success' | 'warning' | 'failure' | 'error';
+  /** Phase B: source this notification originated from (required). */
+  sourceId: string;
+  /** Phase B: human-readable source name used to prefix title/body. */
+  sourceName: string;
 }
 
 export interface DesktopNotificationFilterContext {
@@ -26,6 +30,10 @@ export interface DesktopNotificationFilterContext {
   channelId: number;
   isDirectMessage: boolean;
   viaMqtt?: boolean;
+  /** Phase B: source this notification originated from (required). */
+  sourceId: string;
+  /** Phase B: human-readable source name. */
+  sourceName: string;
 }
 
 class DesktopNotificationService {
@@ -75,14 +83,34 @@ class DesktopNotificationService {
 
     let filtered = 0;
 
+    // Phase B: prefix title/body with source name
+    const prefixedPayload: DesktopNotificationPayload = {
+      ...payload,
+      title: `[${filterContext.sourceName}] ${payload.title}`,
+      body: `[${filterContext.sourceName}] ${payload.body}`,
+    };
+
     try {
       const users = await databaseService.auth.getAllUsers();
 
       for (const user of users) {
         if (!user.isActive) continue;
 
-        // Check if user has web push enabled (controls desktop notifications too)
-        const prefs = await getUserNotificationPreferencesAsync(user.id);
+        // Phase B: permission check — user must have messages:read on this source
+        try {
+          const allowed = await databaseService.checkPermissionAsync(user.id, 'messages', 'read', filterContext.sourceId);
+          if (!allowed) {
+            filtered++;
+            continue;
+          }
+        } catch (error) {
+          logger.error(`Permission check failed for user ${user.id}:`, error);
+          filtered++;
+          continue;
+        }
+
+        // Check if user has web push enabled (controls desktop notifications too) — per-source
+        const prefs = await getUserNotificationPreferencesAsync(user.id, filterContext.sourceId);
         if (!prefs || !prefs.enableWebPush) continue;
 
         // Apply same filtering as web push
@@ -91,7 +119,7 @@ class DesktopNotificationService {
           continue;
         }
 
-        this.send(payload);
+        this.send(prefixedPayload);
         // Only send once — single desktop machine
         return { sent: 1, failed: 0, filtered };
       }
@@ -112,6 +140,7 @@ class DesktopNotificationService {
   ): Promise<{ sent: number; failed: number; filtered: number }> {
     if (!this.enabled) return { sent: 0, failed: 0, filtered: 0 };
 
+    // TODO Phase C: scope preference broadcasts by sourceId once callers pass one
     try {
       const users = await databaseService.auth.getAllUsers();
 

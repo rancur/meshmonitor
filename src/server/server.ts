@@ -8434,6 +8434,9 @@ apiRouter.post('/apprise/test', requireAdmin(), async (req, res) => {
         title: 'Test Notification',
         body,
         type: 'info',
+        // TODO Phase D: resolve real source for test notifications from route
+        sourceId: 'default',
+        sourceName: 'default',
       },
       prefs.appriseUrls
     );

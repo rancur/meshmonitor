@@ -8,6 +8,10 @@ export interface NotificationPayload {
   title: string;
   body: string;
   type?: 'info' | 'success' | 'warning' | 'failure' | 'error';
+  /** Phase B: source this notification originated from (required). */
+  sourceId: string;
+  /** Phase B: human-readable source name used to prefix title/body. */
+  sourceName: string;
   /** Navigation data for push notifications - allows opening specific channel/DM when clicked */
   data?: {
     type: 'channel' | 'dm';
@@ -22,6 +26,10 @@ export interface NotificationFilterContext {
   channelId: number;
   isDirectMessage: boolean;
   viaMqtt?: boolean;
+  /** Phase B: source this notification originated from (required). */
+  sourceId: string;
+  /** Phase B: human-readable source name. */
+  sourceName: string;
 }
 
 export interface BroadcastResult {
@@ -72,7 +80,9 @@ class NotificationService {
             {
               title: payload.title,
               body: payload.body,
-              type: payload.type
+              type: payload.type,
+              sourceId: payload.sourceId,
+              sourceName: payload.sourceName
             } as AppriseNotificationPayload,
             filterContext
           )
@@ -81,7 +91,13 @@ class NotificationService {
       // Desktop (native OS notifications)
       desktopNotificationService.isAvailable()
         ? desktopNotificationService.broadcastWithFiltering(
-            { title: payload.title, body: payload.body, type: payload.type },
+            {
+              title: payload.title,
+              body: payload.body,
+              type: payload.type,
+              sourceId: payload.sourceId,
+              sourceName: payload.sourceName
+            },
             filterContext
           )
         : Promise.resolve({ sent: 0, failed: 0, filtered: 0 })
@@ -162,7 +178,10 @@ class NotificationService {
       const payload: NotificationPayload = {
         title: '🆕 New Node Discovered',
         body: `${longName} (${shortName})${hwModelText}${hopsText}`,
-        type: 'info'
+        type: 'info',
+        // TODO Phase C: resolve real source for new-node discovery notifications
+        sourceId: 'default',
+        sourceName: 'default'
       };
 
       // Send to users with notifyOnNewNode enabled
@@ -187,7 +206,10 @@ class NotificationService {
       const payload: NotificationPayload = {
         title: `🗺️ Traceroute: ${fromNodeId} → ${toNodeId}`,
         body: routeText,
-        type: 'success'
+        type: 'success',
+        // TODO Phase C: resolve real source for traceroute notifications
+        sourceId: 'default',
+        sourceName: 'default'
       };
 
       // Send to users with notifyOnTraceroute enabled

@@ -40,6 +40,9 @@ class ServerEventNotificationService {
         title: `MeshMonitor Started (v${info.version})`,
         body: featuresText,
         type: 'info' as const,
+        // TODO Phase C: resolve real source for server event notifications
+        sourceId: 'default',
+        sourceName: 'default',
       };
 
       await notificationService.broadcastToPreferenceUsers('notifyOnServerEvents', payload);
@@ -75,6 +78,9 @@ class ServerEventNotificationService {
           title: 'Node Reconnected',
           body: `Connection to Meshtastic node restored (was offline for ${disconnectDuration})`,
           type: 'success' as const,
+          // TODO Phase C: resolve real source for server event notifications
+          sourceId: 'default',
+          sourceName: 'default',
         };
 
         await notificationService.broadcastToPreferenceUsers('notifyOnServerEvents', payload);
@@ -110,6 +116,9 @@ class ServerEventNotificationService {
         title: 'Node Disconnected',
         body: 'Lost connection to Meshtastic node',
         type: 'warning' as const,
+        // TODO Phase C: resolve real source for server event notifications
+        sourceId: 'default',
+        sourceName: 'default',
       };
 
       await notificationService.broadcastToPreferenceUsers('notifyOnServerEvents', payload);

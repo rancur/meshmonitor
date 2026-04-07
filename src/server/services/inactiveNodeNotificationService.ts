@@ -184,6 +184,9 @@ class InactiveNodeNotificationService {
         title: `⚠️ Node Inactive: ${node.longName}`,
         body: `${node.shortName} (${node.nodeId}) has been inactive for ${node.inactiveHours} ${hoursText}`,
         type: 'warning' as const,
+        // TODO Phase C: resolve real source for inactive node notifications
+        sourceId: 'default',
+        sourceName: 'default',
       };
 
       // Send to this specific user (they have the preference enabled and node is in their list)
