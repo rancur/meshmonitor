@@ -40,6 +40,7 @@ import { migration as addSourceIdToTimeSyncNodesMigration, runMigration025Postgr
 import { migration as addSourceIdToDistanceDeleteLogMigration, runMigration026Postgres, runMigration026Mysql } from '../server/migrations/026_add_source_id_to_distance_delete_log.js';
 import { migration as addSourceIdToKeyRepairLogMigration, runMigration027Postgres, runMigration027Mysql } from '../server/migrations/027_add_source_id_to_key_repair_log.js';
 import { migration as addSourceIdToNotificationsMigration, runMigration028Postgres, runMigration028Mysql } from '../server/migrations/028_add_source_id_to_notifications.js';
+import { migration as nodesCompositePkMigration, runMigration029Postgres, runMigration029Mysql } from '../server/migrations/029_nodes_composite_pk.js';
 
 // ============================================================================
 // Registry
@@ -400,4 +401,19 @@ registry.register({
   sqlite: (db) => addSourceIdToNotificationsMigration.up(db),
   postgres: (client) => runMigration028Postgres(client),
   mysql: (pool) => runMigration028Mysql(pool),
+});
+
+// ---------------------------------------------------------------------------
+// Migration 029: Nodes composite PK (nodeNum, sourceId) — Phase 1 of nodes
+// per-source refactor. Backfills NULL sourceIds to the first registered source
+// and rebuilds the PK + unique constraints to be source-scoped.
+// ---------------------------------------------------------------------------
+
+registry.register({
+  number: 29,
+  name: 'nodes_composite_pk',
+  settingsKey: 'migration_029_nodes_composite_pk',
+  sqlite: (db) => nodesCompositePkMigration.up(db),
+  postgres: (client) => runMigration029Postgres(client),
+  mysql: (pool) => runMigration029Mysql(pool),
 });

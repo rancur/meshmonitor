@@ -2435,7 +2435,11 @@ class DatabaseService {
    * Update security flags for a node by nodeNum (doesn't require nodeId)
    * Used by duplicate key scanner which needs to update nodes that may not have nodeIds yet
    */
-  updateNodeSecurityFlags(nodeNum: number, duplicateKeyDetected: boolean, keySecurityIssueDetails?: string): void {
+  // TODO Phase 2: make sourceId required and remove the __LEGACY__ fallback.
+  updateNodeSecurityFlags(nodeNum: number, duplicateKeyDetected: boolean, keySecurityIssueDetails?: string, sourceId: string = '__LEGACY__'): void {
+    if (sourceId === '__LEGACY__') {
+      logger.warn(`DatabaseService.updateNodeSecurityFlags(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
+    }
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const cachedNode = this.nodesCache.get(nodeNum);
@@ -2446,23 +2450,35 @@ class DatabaseService {
       }
 
       if (this.nodesRepo) {
-        this.nodesRepo.updateNodeSecurityFlags(nodeNum, duplicateKeyDetected, keySecurityIssueDetails).catch(err => {
+        this.nodesRepo.updateNodeSecurityFlags(nodeNum, duplicateKeyDetected, keySecurityIssueDetails, sourceId).catch(err => {
           logger.error(`Failed to update node security flags in database:`, err);
         });
       }
       return;
     }
 
-    // SQLite: synchronous update
-    const stmt = this.db.prepare(`
-      UPDATE nodes
-      SET duplicateKeyDetected = ?,
-          keySecurityIssueDetails = ?,
-          updatedAt = ?
-      WHERE nodeNum = ?
-    `);
+    // SQLite: synchronous update. After migration 029, nodeNum alone is no
+    // longer unique — scope by sourceId when provided.
     const now = Date.now();
-    stmt.run(duplicateKeyDetected ? 1 : 0, keySecurityIssueDetails ?? null, now, nodeNum);
+    if (sourceId !== '__LEGACY__') {
+      const stmt = this.db.prepare(`
+        UPDATE nodes
+        SET duplicateKeyDetected = ?,
+            keySecurityIssueDetails = ?,
+            updatedAt = ?
+        WHERE nodeNum = ? AND sourceId = ?
+      `);
+      stmt.run(duplicateKeyDetected ? 1 : 0, keySecurityIssueDetails ?? null, now, nodeNum, sourceId);
+    } else {
+      const stmt = this.db.prepare(`
+        UPDATE nodes
+        SET duplicateKeyDetected = ?,
+            keySecurityIssueDetails = ?,
+            updatedAt = ?
+        WHERE nodeNum = ?
+      `);
+      stmt.run(duplicateKeyDetected ? 1 : 0, keySecurityIssueDetails ?? null, now, nodeNum);
+    }
   }
 
   updateNodeLowEntropyFlag(nodeNum: number, keyIsLowEntropy: boolean, details?: string): void {
@@ -2849,7 +2865,8 @@ class DatabaseService {
   /**
    * Update the time offset detection flags for a node
    */
-  updateNodeTimeOffsetFlags(nodeNum: number, isTimeOffsetIssue: boolean, timeOffsetSeconds: number | null): void {
+  // TODO Phase 2: make sourceId required and remove the __LEGACY__ fallback.
+  updateNodeTimeOffsetFlags(nodeNum: number, isTimeOffsetIssue: boolean, timeOffsetSeconds: number | null, sourceId: string = '__LEGACY__'): void {
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const cachedNode = this.nodesCache.get(nodeNum);
@@ -2860,60 +2877,108 @@ class DatabaseService {
       }
 
       // Fire-and-forget database update
-      this.updateNodeTimeOffsetFlagsAsync(nodeNum, isTimeOffsetIssue, timeOffsetSeconds).catch(err => {
+      this.updateNodeTimeOffsetFlagsAsync(nodeNum, isTimeOffsetIssue, timeOffsetSeconds, sourceId).catch(err => {
         logger.error(`Failed to update node time offset flags in database:`, err);
       });
       return;
     }
 
     // SQLite: synchronous update
-    const stmt = this.db.prepare(`
-      UPDATE nodes
-      SET isTimeOffsetIssue = ?,
-          timeOffsetSeconds = ?,
-          updatedAt = ?
-      WHERE nodeNum = ?
-    `);
-    stmt.run(isTimeOffsetIssue ? 1 : 0, timeOffsetSeconds, Date.now(), nodeNum);
-  }
-
-  /**
-   * Update the time offset detection flags for a node (async)
-   */
-  async updateNodeTimeOffsetFlagsAsync(nodeNum: number, isTimeOffsetIssue: boolean, timeOffsetSeconds: number | null): Promise<void> {
-    const now = Date.now();
-
-    if (this.drizzleDbType === 'postgres' && this.postgresPool) {
-      await this.postgresPool.query(`
+    if (sourceId !== '__LEGACY__') {
+      const stmt = this.db.prepare(`
         UPDATE nodes
-        SET "isTimeOffsetIssue" = $1,
-            "timeOffsetSeconds" = $2,
-            "updatedAt" = $3
-        WHERE "nodeNum" = $4
-      `, [isTimeOffsetIssue, timeOffsetSeconds, now, nodeNum]);
-      return;
-    }
-
-    if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
-      await this.mysqlPool.query(`
+        SET isTimeOffsetIssue = ?,
+            timeOffsetSeconds = ?,
+            updatedAt = ?
+        WHERE nodeNum = ? AND sourceId = ?
+      `);
+      stmt.run(isTimeOffsetIssue ? 1 : 0, timeOffsetSeconds, Date.now(), nodeNum, sourceId);
+    } else {
+      logger.warn(`updateNodeTimeOffsetFlags(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
+      const stmt = this.db.prepare(`
         UPDATE nodes
         SET isTimeOffsetIssue = ?,
             timeOffsetSeconds = ?,
             updatedAt = ?
         WHERE nodeNum = ?
-      `, [isTimeOffsetIssue, timeOffsetSeconds, now, nodeNum]);
+      `);
+      stmt.run(isTimeOffsetIssue ? 1 : 0, timeOffsetSeconds, Date.now(), nodeNum);
+    }
+  }
+
+  /**
+   * Update the time offset detection flags for a node (async)
+   */
+  // TODO Phase 2: make sourceId required and remove the __LEGACY__ fallback.
+  async updateNodeTimeOffsetFlagsAsync(nodeNum: number, isTimeOffsetIssue: boolean, timeOffsetSeconds: number | null, sourceId: string = '__LEGACY__'): Promise<void> {
+    const now = Date.now();
+    const scoped = sourceId !== '__LEGACY__';
+    if (!scoped) {
+      logger.warn(`updateNodeTimeOffsetFlagsAsync(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
+    }
+
+    if (this.drizzleDbType === 'postgres' && this.postgresPool) {
+      if (scoped) {
+        await this.postgresPool.query(`
+          UPDATE nodes
+          SET "isTimeOffsetIssue" = $1,
+              "timeOffsetSeconds" = $2,
+              "updatedAt" = $3
+          WHERE "nodeNum" = $4 AND "sourceId" = $5
+        `, [isTimeOffsetIssue, timeOffsetSeconds, now, nodeNum, sourceId]);
+      } else {
+        await this.postgresPool.query(`
+          UPDATE nodes
+          SET "isTimeOffsetIssue" = $1,
+              "timeOffsetSeconds" = $2,
+              "updatedAt" = $3
+          WHERE "nodeNum" = $4
+        `, [isTimeOffsetIssue, timeOffsetSeconds, now, nodeNum]);
+      }
+      return;
+    }
+
+    if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
+      if (scoped) {
+        await this.mysqlPool.query(`
+          UPDATE nodes
+          SET isTimeOffsetIssue = ?,
+              timeOffsetSeconds = ?,
+              updatedAt = ?
+          WHERE nodeNum = ? AND sourceId = ?
+        `, [isTimeOffsetIssue, timeOffsetSeconds, now, nodeNum, sourceId]);
+      } else {
+        await this.mysqlPool.query(`
+          UPDATE nodes
+          SET isTimeOffsetIssue = ?,
+              timeOffsetSeconds = ?,
+              updatedAt = ?
+          WHERE nodeNum = ?
+        `, [isTimeOffsetIssue, timeOffsetSeconds, now, nodeNum]);
+      }
       return;
     }
 
     // SQLite: synchronous update
-    const stmt = this.db.prepare(`
-      UPDATE nodes
-      SET isTimeOffsetIssue = ?,
-          timeOffsetSeconds = ?,
-          updatedAt = ?
-      WHERE nodeNum = ?
-    `);
-    stmt.run(isTimeOffsetIssue ? 1 : 0, timeOffsetSeconds, now, nodeNum);
+    if (scoped) {
+      const stmt = this.db.prepare(`
+        UPDATE nodes
+        SET isTimeOffsetIssue = ?,
+            timeOffsetSeconds = ?,
+            updatedAt = ?
+        WHERE nodeNum = ? AND sourceId = ?
+      `);
+      stmt.run(isTimeOffsetIssue ? 1 : 0, timeOffsetSeconds, now, nodeNum, sourceId);
+    } else {
+      const stmt = this.db.prepare(`
+        UPDATE nodes
+        SET isTimeOffsetIssue = ?,
+            timeOffsetSeconds = ?,
+            updatedAt = ?
+        WHERE nodeNum = ?
+      `);
+      stmt.run(isTimeOffsetIssue ? 1 : 0, timeOffsetSeconds, now, nodeNum);
+    }
   }
 
   /**

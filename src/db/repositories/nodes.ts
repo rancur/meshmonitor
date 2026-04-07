@@ -29,8 +29,18 @@ export class NodesRepository extends BaseRepository {
 
   /**
    * Get a node by nodeNum
+   *
+   * Phase 1: sourceId is accepted but NOT yet enforced in the WHERE clause
+   * (the body still queries by nodeNum alone). This will change in Phase 2
+   * once all call sites pass a real sourceId.
+   *
+   * TODO Phase 2: remove the __LEGACY__ default and add `sourceId` to the
+   * WHERE clause. Every call site must supply a real sourceId.
    */
-  async getNode(nodeNum: number): Promise<DbNode | null> {
+  async getNode(nodeNum: number, sourceId: string = '__LEGACY__'): Promise<DbNode | null> {
+    if (sourceId === '__LEGACY__') {
+      logger.warn(`getNode(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
+    }
     const { nodes } = this.tables;
     const result = await this.db
       .select()
@@ -63,8 +73,14 @@ export class NodesRepository extends BaseRepository {
 
   /**
    * Get a node by nodeId
+   *
+   * TODO Phase 2: remove the __LEGACY__ default and add `sourceId` to the
+   * WHERE clause. Every call site must supply a real sourceId.
    */
-  async getNodeByNodeId(nodeId: string): Promise<DbNode | null> {
+  async getNodeByNodeId(nodeId: string, sourceId: string = '__LEGACY__'): Promise<DbNode | null> {
+    if (sourceId === '__LEGACY__') {
+      logger.warn(`getNodeByNodeId(${nodeId}) called without sourceId — Phase 2 must update this call site`);
+    }
     const { nodes } = this.tables;
     const result = await this.db
       .select()
@@ -389,15 +405,34 @@ export class NodesRepository extends BaseRepository {
   }
 
   /**
-   * Update security flags for a node
+   * Update security flags for a node.
+   *
+   * Unlike other single-node methods in this Phase 1 commit, sourceId IS
+   * applied to the WHERE clause here because the composite PK migration
+   * (029) makes nodeNum alone non-unique, and the security scanner operates
+   * per-source so callers always know which source the flag belongs to.
+   *
+   * Callers that haven't been updated yet pass the temporary __LEGACY__
+   * sentinel; in that case we fall back to the old behavior for
+   * compatibility, but log a warning.
+   * TODO Phase 2: remove the __LEGACY__ fallback.
    */
   async updateNodeSecurityFlags(
     nodeNum: number,
     duplicateKeyDetected: boolean,
-    keySecurityIssueDetails?: string
+    keySecurityIssueDetails?: string,
+    sourceId: string = '__LEGACY__'
   ): Promise<void> {
     const now = this.now();
     const { nodes } = this.tables;
+
+    const whereClause = sourceId === '__LEGACY__'
+      ? eq(nodes.nodeNum, nodeNum)
+      : and(eq(nodes.nodeNum, nodeNum), eq(nodes.sourceId, sourceId));
+
+    if (sourceId === '__LEGACY__') {
+      logger.warn(`updateNodeSecurityFlags(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
+    }
 
     await this.db
       .update(nodes)
@@ -406,7 +441,7 @@ export class NodesRepository extends BaseRepository {
         keySecurityIssueDetails: keySecurityIssueDetails ?? null,
         updatedAt: now,
       })
-      .where(eq(nodes.nodeNum, nodeNum));
+      .where(whereClause);
   }
 
   /**
