@@ -75,6 +75,7 @@ const SQLITE_CREATE = `
   CREATE TABLE IF NOT EXISTS push_subscriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL DEFAULT '',
     endpoint TEXT NOT NULL UNIQUE,
     p256dh_key TEXT NOT NULL,
     auth_key TEXT NOT NULL,
@@ -86,7 +87,8 @@ const SQLITE_CREATE = `
 
   CREATE TABLE IF NOT EXISTS user_notification_preferences (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL DEFAULT '',
     enable_web_push INTEGER DEFAULT 1,
     enable_direct_messages INTEGER DEFAULT 1,
     notify_on_emoji INTEGER DEFAULT 0,
@@ -105,7 +107,8 @@ const SQLITE_CREATE = `
     muted_channels TEXT,
     muted_dms TEXT,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    UNIQUE(user_id, source_id)
   );
 
   CREATE TABLE IF NOT EXISTS messages (
@@ -198,6 +201,7 @@ const POSTGRES_CREATE = `
   CREATE TABLE push_subscriptions (
     id SERIAL PRIMARY KEY,
     "userId" INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    "sourceId" TEXT NOT NULL DEFAULT '',
     endpoint TEXT NOT NULL UNIQUE,
     "p256dhKey" TEXT NOT NULL,
     "authKey" TEXT NOT NULL,
@@ -209,7 +213,8 @@ const POSTGRES_CREATE = `
 
   CREATE TABLE user_notification_preferences (
     id SERIAL PRIMARY KEY,
-    "userId" INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    "userId" INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    "sourceId" TEXT NOT NULL DEFAULT '',
     "notifyOnMessage" BOOLEAN DEFAULT TRUE,
     "notifyOnDirectMessage" BOOLEAN DEFAULT TRUE,
     "notifyOnChannelMessage" BOOLEAN DEFAULT FALSE,
@@ -229,7 +234,8 @@ const POSTGRES_CREATE = `
     "mutedChannels" TEXT,
     "mutedDMs" TEXT,
     "createdAt" BIGINT NOT NULL,
-    "updatedAt" BIGINT NOT NULL
+    "updatedAt" BIGINT NOT NULL,
+    UNIQUE("userId", "sourceId")
   );
 
   CREATE TABLE messages (
@@ -326,6 +332,7 @@ const MYSQL_CREATE = `
   CREATE TABLE push_subscriptions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     userId INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    sourceId VARCHAR(64) NOT NULL DEFAULT '',
     endpoint TEXT NOT NULL,
     p256dhKey VARCHAR(512) NOT NULL,
     authKey VARCHAR(128) NOT NULL,
@@ -338,7 +345,9 @@ const MYSQL_CREATE = `
 
   CREATE TABLE user_notification_preferences (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    userId INTEGER NOT NULL UNIQUE,
+    userId INTEGER NOT NULL,
+    sourceId VARCHAR(64) NOT NULL DEFAULT '',
+    UNIQUE KEY uniq_user_source (userId, sourceId),
     notifyOnMessage BOOLEAN DEFAULT TRUE,
     notifyOnDirectMessage BOOLEAN DEFAULT TRUE,
     notifyOnChannelMessage BOOLEAN DEFAULT FALSE,

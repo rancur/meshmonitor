@@ -195,6 +195,8 @@ export interface DbNeighborInfo {
 export interface DbPushSubscription {
   id?: number;
   userId?: number;
+  /** TODO Phase B: required — source this subscription is scoped to */
+  sourceId?: string;
   endpoint: string;
   p256dhKey: string;
   authKey: string;

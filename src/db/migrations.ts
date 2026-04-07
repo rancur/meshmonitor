@@ -39,6 +39,7 @@ import { migration as addSourceIdToTracerouteTablesMigration, runMigration024Pos
 import { migration as addSourceIdToTimeSyncNodesMigration, runMigration025Postgres, runMigration025Mysql } from '../server/migrations/025_add_source_id_to_time_sync_nodes.js';
 import { migration as addSourceIdToDistanceDeleteLogMigration, runMigration026Postgres, runMigration026Mysql } from '../server/migrations/026_add_source_id_to_distance_delete_log.js';
 import { migration as addSourceIdToKeyRepairLogMigration, runMigration027Postgres, runMigration027Mysql } from '../server/migrations/027_add_source_id_to_key_repair_log.js';
+import { migration as addSourceIdToNotificationsMigration, runMigration028Postgres, runMigration028Mysql } from '../server/migrations/028_add_source_id_to_notifications.js';
 
 // ============================================================================
 // Registry
@@ -383,4 +384,20 @@ registry.register({
   sqlite: (db) => addSourceIdToKeyRepairLogMigration.up(db),
   postgres: (client) => runMigration027Postgres(client),
   mysql: (pool) => runMigration027Mysql(pool),
+});
+
+// ---------------------------------------------------------------------------
+// Migration 028: Per-source notifications (Phase A)
+// Adds sourceId to push_subscriptions and user_notification_preferences,
+// deletes legacy NULL-sourceId rows, and replaces old unique constraints
+// with composite uniques that include sourceId.
+// ---------------------------------------------------------------------------
+
+registry.register({
+  number: 28,
+  name: 'add_source_id_to_notifications',
+  settingsKey: 'migration_028_add_source_id_to_notifications',
+  sqlite: (db) => addSourceIdToNotificationsMigration.up(db),
+  postgres: (client) => runMigration028Postgres(client),
+  mysql: (pool) => runMigration028Mysql(pool),
 });
