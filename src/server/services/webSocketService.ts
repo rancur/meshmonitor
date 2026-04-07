@@ -235,11 +235,34 @@ export function initializeWebSocket(
     });
 
     // Room management — clients join a source room to receive only that source's events
-    socket.on('join-source', (sourceId: string) => {
-      if (typeof sourceId === 'string' && sourceId.length > 0) {
+    socket.on('join-source', async (sourceId: string) => {
+      if (typeof sourceId !== 'string' || sourceId.length === 0) return;
+      const sockUserId = (socket as any).userId as number | undefined;
+      const sockIsAdmin = (socket as any).isAdmin as boolean | undefined;
+      try {
+        if (!sockIsAdmin) {
+          if (sockUserId === undefined) {
+            socket.emit('join-source:error', { sourceId, error: 'unauthorized' });
+            return;
+          }
+          const allowed = await databaseService.checkPermissionAsync(
+            sockUserId,
+            'messages',
+            'read',
+            sourceId
+          );
+          if (!allowed) {
+            logger.warn(`[WebSocket] Socket ${socket.id} denied join-source ${sourceId}`);
+            socket.emit('join-source:error', { sourceId, error: 'forbidden' });
+            return;
+          }
+        }
         socket.join(`source:${sourceId}`);
         joinedSourceId = sourceId;
         logger.debug(`[WebSocket] Socket ${socket.id} joined room source:${sourceId}`);
+      } catch (err) {
+        logger.error('[WebSocket] join-source permission check failed:', err);
+        socket.emit('join-source:error', { sourceId, error: 'internal' });
       }
     });
 

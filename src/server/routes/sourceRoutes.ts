@@ -192,7 +192,7 @@ router.get('/:id/status', requirePermission('sources', 'read'), async (req: Requ
 // GET /api/sources/:id/nodes — all nodes for a source
 // Uses nodes:read permission (not sources:read) so anonymous users with channel viewOnMap
 // permissions can access node data for map display, filtered by their channel permissions.
-router.get('/:id/nodes', requirePermission('nodes', 'read'), async (req: Request, res: Response) => {
+router.get('/:id/nodes', requirePermission('nodes', 'read', { sourceIdFrom: 'params.id' }), async (req: Request, res: Response) => {
   try {
     const source = await databaseService.sources.getSource(req.params.id);
     if (!source) return res.status(404).json({ error: 'Source not found' });
@@ -239,7 +239,7 @@ router.get('/:id/nodes', requirePermission('nodes', 'read'), async (req: Request
 });
 
 // GET /api/sources/:id/messages?limit=100&offset=0 — messages for a source
-router.get('/:id/messages', requirePermission('sources', 'read'), async (req: Request, res: Response) => {
+router.get('/:id/messages', requirePermission('messages', 'read', { sourceIdFrom: 'params.id' }), async (req: Request, res: Response) => {
   try {
     const source = await databaseService.sources.getSource(req.params.id);
     if (!source) return res.status(404).json({ error: 'Source not found' });
@@ -255,7 +255,7 @@ router.get('/:id/messages', requirePermission('sources', 'read'), async (req: Re
 });
 
 // GET /api/sources/:id/channels — channels for a source
-router.get('/:id/channels', requirePermission('sources', 'read'), async (req: Request, res: Response) => {
+router.get('/:id/channels', requirePermission('messages', 'read', { sourceIdFrom: 'params.id' }), async (req: Request, res: Response) => {
   try {
     const source = await databaseService.sources.getSource(req.params.id);
     if (!source) return res.status(404).json({ error: 'Source not found' });
@@ -269,7 +269,7 @@ router.get('/:id/channels', requirePermission('sources', 'read'), async (req: Re
 });
 
 // GET /api/sources/:id/traceroutes?limit=50 — traceroutes for a source
-router.get('/:id/traceroutes', requirePermission('sources', 'read'), async (req: Request, res: Response) => {
+router.get('/:id/traceroutes', requirePermission('traceroute', 'read', { sourceIdFrom: 'params.id' }), async (req: Request, res: Response) => {
   try {
     const source = await databaseService.sources.getSource(req.params.id);
     if (!source) return res.status(404).json({ error: 'Source not found' });
@@ -284,7 +284,7 @@ router.get('/:id/traceroutes', requirePermission('sources', 'read'), async (req:
 });
 
 // GET /api/sources/:id/neighbor-info — enriched neighbor info scoped to a source
-router.get('/:id/neighbor-info', requirePermission('sources', 'read'), async (req: Request, res: Response) => {
+router.get('/:id/neighbor-info', requirePermission('nodes', 'read', { sourceIdFrom: 'params.id' }), async (req: Request, res: Response) => {
   try {
     const source = await databaseService.sources.getSource(req.params.id);
     if (!source) return res.status(404).json({ error: 'Source not found' });

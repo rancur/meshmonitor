@@ -220,11 +220,9 @@ describe('Message Deletion Routes', () => {
   describe('DELETE /api/messages/channels/:channelId - Channel purge', () => {
     it('should return 403 for users without channel_5:write', async () => {
       const app = createApp({ id: 2, username: 'user', isAdmin: false });
-      vi.spyOn(databaseService, 'getUserPermissionSetAsync').mockResolvedValue({
-        channel_0: { read: false, write: false }
-      });
+      vi.spyOn(databaseService, 'checkPermissionAsync').mockResolvedValue(false);
 
-      const response = await request(app).delete('/api/messages/channels/5');
+      const response = await request(app).delete('/api/messages/channels/5?sourceId=test');
 
       expect(response.status).toBe(403);
       expect(response.body.message).toContain('channel_5:write');
@@ -232,7 +230,7 @@ describe('Message Deletion Routes', () => {
 
     it('should return 400 for invalid channel ID', async () => {
       const app = createApp({ id: 1, username: 'admin', isAdmin: true });
-      const response = await request(app).delete('/api/messages/channels/invalid');
+      const response = await request(app).delete('/api/messages/channels/invalid?sourceId=test');
 
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('message', 'Invalid channel ID');
@@ -243,7 +241,7 @@ describe('Message Deletion Routes', () => {
       mockMessagesRepo.purgeChannelMessages.mockResolvedValue(15);
       const auditLogSpy = vi.spyOn(databaseService, 'auditLogAsync').mockResolvedValue(undefined);
 
-      const response = await request(app).delete('/api/messages/channels/5');
+      const response = await request(app).delete('/api/messages/channels/5?sourceId=test');
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('deletedCount', 15);
@@ -260,13 +258,11 @@ describe('Message Deletion Routes', () => {
 
     it('should allow user with channel_3:write to purge channel messages', async () => {
       const app = createApp({ id: 2, username: 'user', isAdmin: false });
-      vi.spyOn(databaseService, 'getUserPermissionSetAsync').mockResolvedValue({
-        channel_3: { read: true, write: true }
-      });
+      vi.spyOn(databaseService, 'checkPermissionAsync').mockResolvedValue(true);
       mockMessagesRepo.purgeChannelMessages.mockResolvedValue(10);
       const auditLogSpy = vi.spyOn(databaseService, 'auditLogAsync').mockResolvedValue(undefined);
 
-      const response = await request(app).delete('/api/messages/channels/3');
+      const response = await request(app).delete('/api/messages/channels/3?sourceId=test');
 
       expect(response.status).toBe(200);
       expect(mockMessagesRepo.purgeChannelMessages).toHaveBeenCalledWith(3);
@@ -284,7 +280,7 @@ describe('Message Deletion Routes', () => {
       mockMessagesRepo.purgeChannelMessages.mockResolvedValue(20);
       const auditLogSpy = vi.spyOn(databaseService, 'auditLogAsync').mockResolvedValue(undefined);
 
-      await request(app).delete('/api/messages/channels/7');
+      await request(app).delete('/api/messages/channels/7?sourceId=test');
 
       expect(auditLogSpy).toHaveBeenCalledWith(
         1,

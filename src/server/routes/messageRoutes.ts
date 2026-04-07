@@ -50,10 +50,22 @@ const requireChannelsWrite: RequestHandler = async (req, res, next) => {
   const userId = user?.id ?? null;
   const channelId = parseInt(req.params.channelId, 10);
 
-  // Get user permissions (async for multi-database support)
-  const permissions = userId !== null
-    ? await databaseService.getUserPermissionSetAsync(userId)
-    : {};
+  // Resolve sourceId from body or query — required for channel-write routes
+  const rawSourceId = (req.body && req.body.sourceId) ?? (req.query && req.query.sourceId);
+  if (rawSourceId === undefined || rawSourceId === null || rawSourceId === '') {
+    return res.status(400).json({
+      error: 'Bad request',
+      message: 'sourceId is required for channel write operations'
+    });
+  }
+  if (typeof rawSourceId !== 'string') {
+    return res.status(400).json({
+      error: 'Bad request',
+      message: 'Invalid sourceId'
+    });
+  }
+  const sourceId: string = rawSourceId;
+  (req as any).scopedSourceId = sourceId;
 
   // Check if user is admin
   const isAdmin = user?.isAdmin ?? false;
@@ -62,15 +74,17 @@ const requireChannelsWrite: RequestHandler = async (req, res, next) => {
     return next();
   }
 
-  // Check specific channel write permission
+  // Check specific channel write permission scoped to source
   const channelResource = `channel_${channelId}` as import('../../types/permission.js').ResourceType;
-  const hasChannelWrite = permissions[channelResource]?.write === true;
+  const hasChannelWrite = userId !== null
+    ? await databaseService.checkPermissionAsync(userId, channelResource, 'write', sourceId)
+    : false;
 
   if (!hasChannelWrite) {
-    logger.warn(`❌ Permission denied for channel message deletion - ${channelResource}:write=${hasChannelWrite}`);
+    logger.warn(`❌ Permission denied for channel message deletion - ${channelResource}:write source=${sourceId}`);
     return res.status(403).json({
       error: 'Forbidden',
-      message: `You need ${channelResource}:write permission to delete messages from this channel`
+      message: `You need ${channelResource}:write permission for source ${sourceId} to delete messages from this channel`
     });
   }
 
