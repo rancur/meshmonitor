@@ -133,23 +133,30 @@ export const migration = {
     `).all() as Array<{ name: string; sql: string }>;
 
     const tx = db.transaction(() => {
-      // Ensure sources table has at least one row.
+      // Count nodes requiring backfill (rows with NULL sourceId).
+      const nullNodesRow = db.prepare(`SELECT COUNT(*) as c FROM nodes WHERE sourceId IS NULL`).get() as { c: number };
+      const nullNodes = nullNodesRow?.c ?? 0;
+
       const srcCountRow = db.prepare(`SELECT COUNT(*) as c FROM sources`).get() as { c: number };
-      if (!srcCountRow || srcCountRow.c === 0) {
+      const srcCount = srcCountRow?.c ?? 0;
+
+      if (srcCount === 0 && nullNodes > 0) {
+        // Real upgrade path with legacy data but no sources — cannot safely backfill.
         throw new Error('Migration 029 aborted: sources table is empty. Cannot determine a default sourceId for legacy nodes. Create at least one source before upgrading.');
       }
 
-      // Determine default sourceId = first source by createdAt then rowid.
-      const defaultSrcRow = db.prepare(`
-        SELECT id FROM sources ORDER BY createdAt ASC, rowid ASC LIMIT 1
-      `).get() as { id: string } | undefined;
-      if (!defaultSrcRow) {
-        throw new Error('Migration 029 aborted: failed to read default sourceId from sources table.');
+      if (srcCount > 0 && nullNodes > 0) {
+        // Determine default sourceId = first source by createdAt then rowid.
+        const defaultSrcRow = db.prepare(`
+          SELECT id FROM sources ORDER BY createdAt ASC, rowid ASC LIMIT 1
+        `).get() as { id: string } | undefined;
+        if (!defaultSrcRow) {
+          throw new Error('Migration 029 aborted: failed to read default sourceId from sources table.');
+        }
+        const defaultSourceId = defaultSrcRow.id;
+        logger.info(`Migration 029 (SQLite): backfilling ${nullNodes} NULL sourceId rows with default source '${defaultSourceId}'`);
+        db.prepare(`UPDATE nodes SET sourceId = ? WHERE sourceId IS NULL`).run(defaultSourceId);
       }
-      const defaultSourceId = defaultSrcRow.id;
-      logger.info(`Migration 029 (SQLite): backfilling NULL sourceId rows with default source '${defaultSourceId}'`);
-
-      db.prepare(`UPDATE nodes SET sourceId = ? WHERE sourceId IS NULL`).run(defaultSourceId);
 
       // Create rebuilt table with composite PK.
       db.exec(`
@@ -224,17 +231,23 @@ export async function runMigration029Postgres(client: any): Promise<void> {
 
   await client.query('BEGIN');
   try {
-    const srcCount = await client.query(`SELECT COUNT(*)::int AS c FROM sources`);
-    if (!srcCount.rows[0] || srcCount.rows[0].c === 0) {
+    const nullNodesRes = await client.query(`SELECT COUNT(*)::int AS c FROM "nodes" WHERE "sourceId" IS NULL`);
+    const nullNodes = nullNodesRes.rows[0]?.c ?? 0;
+    const srcCountRes = await client.query(`SELECT COUNT(*)::int AS c FROM sources`);
+    const srcCount = srcCountRes.rows[0]?.c ?? 0;
+
+    if (srcCount === 0 && nullNodes > 0) {
       throw new Error('Migration 029 aborted: sources table is empty. Cannot backfill NULL sourceId on nodes.');
     }
 
-    // Backfill NULL sourceIds from the oldest source.
-    await client.query(`
-      UPDATE "nodes"
-      SET "sourceId" = (SELECT id FROM sources ORDER BY "createdAt" ASC, id ASC LIMIT 1)
-      WHERE "sourceId" IS NULL
-    `);
+    if (srcCount > 0 && nullNodes > 0) {
+      // Backfill NULL sourceIds from the oldest source.
+      await client.query(`
+        UPDATE "nodes"
+        SET "sourceId" = (SELECT id FROM sources ORDER BY "createdAt" ASC, id ASC LIMIT 1)
+        WHERE "sourceId" IS NULL
+      `);
+    }
 
     await client.query(`ALTER TABLE "nodes" ALTER COLUMN "sourceId" SET NOT NULL`);
 
@@ -293,18 +306,23 @@ export async function runMigration029Mysql(pool: any): Promise<void> {
     await conn.beginTransaction();
 
     try {
+      const [nullNodeRows] = await conn.query(`SELECT COUNT(*) AS c FROM nodes WHERE sourceId IS NULL`);
+      const nullNodes = Number((nullNodeRows as any[])[0]?.c ?? 0);
       const [srcRows] = await conn.query(`SELECT COUNT(*) AS c FROM sources`);
       const srcCount = Number((srcRows as any[])[0]?.c ?? 0);
-      if (srcCount === 0) {
+
+      if (srcCount === 0 && nullNodes > 0) {
         throw new Error('Migration 029 aborted: sources table is empty. Cannot backfill NULL sourceId on nodes.');
       }
 
-      // Backfill NULLs.
-      await conn.query(`
-        UPDATE nodes
-        SET sourceId = (SELECT id FROM sources ORDER BY createdAt ASC, id ASC LIMIT 1)
-        WHERE sourceId IS NULL
-      `);
+      if (srcCount > 0 && nullNodes > 0) {
+        // Backfill NULLs from oldest source.
+        await conn.query(`
+          UPDATE nodes
+          SET sourceId = (SELECT id FROM (SELECT id FROM sources ORDER BY createdAt ASC, id ASC LIMIT 1) AS s)
+          WHERE sourceId IS NULL
+        `);
+      }
 
       await conn.query(`ALTER TABLE nodes MODIFY COLUMN sourceId VARCHAR(36) NOT NULL`);
 
