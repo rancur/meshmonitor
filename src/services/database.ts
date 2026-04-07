@@ -94,6 +94,7 @@ export interface DbNode {
   hasRemoteAdmin?: boolean; // Has remote admin access
   lastRemoteAdminCheck?: number; // Unix timestamp ms of last check
   remoteAdminMetadata?: string; // JSON string of metadata response
+  sourceId?: string; // Composite key component (Phase 3)
   createdAt: number;
   updatedAt: number;
 }
@@ -283,7 +284,25 @@ class DatabaseService {
   // These caches allow sync methods like getSetting() and getNode() to work
   // with async databases by caching data loaded at startup
   private settingsCache: Map<string, string> = new Map();
-  private nodesCache: Map<number, DbNode> = new Map();
+  private nodesCache: Map<string, DbNode> = new Map();
+
+  /**
+   * Phase 3B: Build composite cache key from nodeNum + sourceId.
+   * The nodes table PK is (nodeNum, sourceId) post-migration 029.
+   */
+  private cacheKey(nodeNum: number, sourceId: string): string {
+    return `${nodeNum}:${sourceId}`;
+  }
+
+  /**
+   * Phase 3B: Iterate cache, optionally filtered by sourceId.
+   */
+  private *iterateCache(sourceId?: string): IterableIterator<DbNode> {
+    for (const node of this.nodesCache.values()) {
+      if (sourceId && node.sourceId !== sourceId) continue;
+      yield node;
+    }
+  }
   private channelsCache: Map<number, DbChannel> = new Map();
   private _traceroutesCache: DbTraceroute[] = [];
   private _traceroutesByNodesCache: Map<string, DbTraceroute[]> = new Map();
@@ -778,10 +797,11 @@ class DatabaseService {
             hasRemoteAdmin: node.hasRemoteAdmin ?? undefined,
             lastRemoteAdminCheck: node.lastRemoteAdminCheck ?? undefined,
             remoteAdminMetadata: node.remoteAdminMetadata ?? undefined,
+            sourceId: (node as any).sourceId ?? 'default',
             createdAt: node.createdAt,
             updatedAt: node.updatedAt,
           };
-          this.nodesCache.set(node.nodeNum, localNode);
+          this.nodesCache.set(this.cacheKey(localNode.nodeNum, localNode.sourceId ?? 'default'), localNode);
         }
         // Count nodes with welcomedAt set for auto-welcome diagnostics
         const nodesWithWelcome = Array.from(this.nodesCache.values()).filter(n => n.welcomedAt !== null && n.welcomedAt !== undefined);
@@ -1886,8 +1906,9 @@ class DatabaseService {
     // Ghost suppression: block creation of suppressed nodes but allow updates to existing ones
     if (this.isNodeSuppressed(nodeData.nodeNum)) {
       // Check if this node already exists (in cache for Postgres/MySQL, in DB for SQLite)
+      const suppressedSourceId = (nodeData as any).sourceId ?? 'default';
       const existsInCache = (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql')
-        ? this.nodesCache.has(nodeData.nodeNum)
+        ? this.nodesCache.has(this.cacheKey(nodeData.nodeNum, suppressedSourceId))
         : !!this.getNode(nodeData.nodeNum);
       if (!existsInCache) {
         logger.debug(`👻 Suppressed ghost node creation for !${nodeData.nodeNum.toString(16).padStart(8, '0')}`);
@@ -1899,7 +1920,8 @@ class DatabaseService {
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       if (this.nodesRepo) {
         // Update cache optimistically
-        const existingNode = this.nodesCache.get(nodeData.nodeNum);
+        const upsertSourceId = (nodeData as any).sourceId ?? 'default';
+        const existingNode = this.nodesCache.get(this.cacheKey(nodeData.nodeNum, upsertSourceId));
         const now = Date.now();
         const updatedNode: DbNode = {
           nodeNum: nodeData.nodeNum,
@@ -1955,10 +1977,11 @@ class DatabaseService {
           hasRemoteAdmin: existingNode?.hasRemoteAdmin,
           lastRemoteAdminCheck: existingNode?.lastRemoteAdminCheck,
           remoteAdminMetadata: existingNode?.remoteAdminMetadata,
+          sourceId: upsertSourceId,
           createdAt: existingNode?.createdAt ?? now,
           updatedAt: now,
         };
-        this.nodesCache.set(nodeData.nodeNum, updatedNode);
+        this.nodesCache.set(this.cacheKey(nodeData.nodeNum, upsertSourceId), updatedNode);
 
         // Fire and forget async version - pass the full merged node to avoid race conditions
         // where a subsequent update (like welcomedAt) could be overwritten
@@ -1974,7 +1997,7 @@ class DatabaseService {
               if (wasIgnored) {
                 logger.debug(`Restoring ignored status for returning node ${nodeData.nodeNum}`);
                 updatedNode.isIgnored = true;
-                this.nodesCache.set(nodeData.nodeNum!, updatedNode);
+                this.nodesCache.set(this.cacheKey(nodeData.nodeNum!, upsertSourceId), updatedNode);
                 if (this.nodesRepo) {
                   this.nodesRepo.setNodeIgnored(nodeData.nodeNum!, true).catch(err => {
                     logger.error('Failed to restore ignored status:', err);
@@ -2206,7 +2229,12 @@ class DatabaseService {
         logger.debug(`getNode(${nodeNum}) called before cache initialized`);
         return null;
       }
-      return this.nodesCache.get(nodeNum) ?? null;
+      // TODO Phase 3C: sourceId needed here — getNode signature is nodeNum-only.
+      // Iterate cache to find first match by nodeNum (legacy behavior).
+      for (const node of this.nodesCache.values()) {
+        if (node.nodeNum === nodeNum) return node;
+      }
+      return null;
     }
     const stmt = this.db.prepare('SELECT * FROM nodes WHERE nodeNum = ?');
     const node = stmt.get(nodeNum) as DbNode | null;
@@ -2220,7 +2248,7 @@ class DatabaseService {
         logger.debug('getAllNodes() called before cache initialized');
         return [];
       }
-      return Array.from(this.nodesCache.values());
+      return Array.from(this.iterateCache());
     }
     const stmt = this.db.prepare('SELECT * FROM nodes ORDER BY updatedAt DESC');
     const nodes = stmt.all() as DbNode[];
@@ -2242,7 +2270,7 @@ class DatabaseService {
         return [];
       }
       const cutoff = Math.floor(Date.now() / 1000) - (sinceDays * 24 * 60 * 60);
-      return Array.from(this.nodesCache.values())
+      return Array.from(this.iterateCache())
         .filter(node => node.lastHeard !== undefined && node.lastHeard !== null && node.lastHeard > cutoff)
         .sort((a, b) => (b.lastHeard ?? 0) - (a.lastHeard ?? 0));
     }
@@ -2261,8 +2289,9 @@ class DatabaseService {
     const now = Date.now();
     // Update cache for PostgreSQL/MySQL
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode) {
+      // TODO Phase 3C: sourceId needed here — updateNodeMessageHops signature is nodeNum-only.
+      for (const cachedNode of this.nodesCache.values()) {
+        if (cachedNode.nodeNum !== nodeNum) continue;
         cachedNode.lastMessageHops = hops;
         cachedNode.updatedAt = now;
       }
@@ -2287,8 +2316,7 @@ class DatabaseService {
     // Update cache for PostgreSQL/MySQL
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       let count = 0;
-      for (const node of this.nodesCache.values()) {
-        if (sourceId && (node as any).sourceId !== sourceId) continue;
+      for (const node of this.iterateCache(sourceId ?? undefined)) {
         if (node.welcomedAt === undefined || node.welcomedAt === null) {
           node.welcomedAt = now;
           node.updatedAt = now;
@@ -2322,7 +2350,11 @@ class DatabaseService {
     const now = Date.now();
     // Update cache for PostgreSQL/MySQL
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
+      // TODO Phase 3C: sourceId needed here — markNodeAsWelcomedIfNotAlready signature is nodeNum/nodeId only.
+      let cachedNode: DbNode | undefined;
+      for (const node of this.nodesCache.values()) {
+        if (node.nodeNum === nodeNum) { cachedNode = node; break; }
+      }
       if (cachedNode && cachedNode.nodeId === nodeId && (cachedNode.welcomedAt === undefined || cachedNode.welcomedAt === null)) {
         cachedNode.welcomedAt = now;
         cachedNode.updatedAt = now;
@@ -2416,7 +2448,7 @@ class DatabaseService {
     // For PostgreSQL/MySQL, use cache
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const result: Array<{ nodeNum: number; publicKey: string | null }> = [];
-      for (const node of this.nodesCache.values()) {
+      for (const node of this.iterateCache()) {
         if (node.publicKey && node.publicKey !== '') {
           result.push({ nodeNum: node.nodeNum, publicKey: node.publicKey });
         }
@@ -2437,13 +2469,11 @@ class DatabaseService {
    */
   /**
    * Update security flags for a node, scoped per-source (post-migration 029).
-   * TODO Phase 3: nodesCache for PG/MySQL is still keyed by nodeNum only;
-   * update both matching entries when multiple sources share a nodeNum.
    */
   updateNodeSecurityFlags(nodeNum: number, duplicateKeyDetected: boolean, keySecurityIssueDetails: string | undefined, sourceId: string): void {
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode && (cachedNode as any).sourceId === sourceId) {
+      const cachedNode = this.nodesCache.get(this.cacheKey(nodeNum, sourceId));
+      if (cachedNode) {
         cachedNode.duplicateKeyDetected = duplicateKeyDetected;
         cachedNode.keySecurityIssueDetails = keySecurityIssueDetails;
         cachedNode.updatedAt = Date.now();
@@ -2505,8 +2535,9 @@ class DatabaseService {
 
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode) {
+      // TODO Phase 3C: sourceId needed here — updateNodeLowEntropyFlag signature is nodeNum-only.
+      for (const cachedNode of this.nodesCache.values()) {
+        if (cachedNode.nodeNum !== nodeNum) continue;
         cachedNode.keyIsLowEntropy = keyIsLowEntropy;
         cachedNode.keySecurityIssueDetails = combinedDetails || undefined;
         cachedNode.updatedAt = Date.now();
@@ -2737,8 +2768,9 @@ class DatabaseService {
 
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode) {
+      // TODO Phase 3C: sourceId needed here — updateNodeSpamFlags signature is nodeNum-only.
+      for (const cachedNode of this.nodesCache.values()) {
+        if (cachedNode.nodeNum !== nodeNum) continue;
         (cachedNode as any).isExcessivePackets = isExcessivePackets;
         (cachedNode as any).packetRatePerHour = packetRatePerHour;
         (cachedNode as any).packetRateLastChecked = now;
@@ -2813,7 +2845,7 @@ class DatabaseService {
     // For PostgreSQL/MySQL, use cache
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const result: DbNode[] = [];
-      for (const node of this.nodesCache.values()) {
+      for (const node of this.iterateCache()) {
         if ((node as any).isExcessivePackets) {
           result.push(node);
         }
@@ -2833,11 +2865,9 @@ class DatabaseService {
   async getNodesWithExcessivePacketsAsync(sourceId?: string): Promise<DbNode[]> {
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const result: DbNode[] = [];
-      for (const node of this.nodesCache.values()) {
+      for (const node of this.iterateCache(sourceId)) {
         if ((node as any).isExcessivePackets) {
-          if (!sourceId || (node as any).sourceId === sourceId) {
-            result.push(node);
-          }
+          result.push(node);
         }
       }
       return result;
@@ -2857,8 +2887,8 @@ class DatabaseService {
   updateNodeTimeOffsetFlags(nodeNum: number, isTimeOffsetIssue: boolean, timeOffsetSeconds: number | null, sourceId: string): void {
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode && (cachedNode as any).sourceId === sourceId) {
+      const cachedNode = this.nodesCache.get(this.cacheKey(nodeNum, sourceId));
+      if (cachedNode) {
         (cachedNode as any).isTimeOffsetIssue = isTimeOffsetIssue;
         (cachedNode as any).timeOffsetSeconds = timeOffsetSeconds;
         cachedNode.updatedAt = Date.now();
@@ -2929,7 +2959,7 @@ class DatabaseService {
     // For PostgreSQL/MySQL, use cache
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const result: DbNode[] = [];
-      for (const node of this.nodesCache.values()) {
+      for (const node of this.iterateCache()) {
         if ((node as any).isTimeOffsetIssue) {
           result.push(node);
         }
@@ -2949,11 +2979,9 @@ class DatabaseService {
   async getNodesWithTimeOffsetIssuesAsync(sourceId?: string): Promise<DbNode[]> {
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       const result: DbNode[] = [];
-      for (const node of this.nodesCache.values()) {
+      for (const node of this.iterateCache(sourceId)) {
         if ((node as any).isTimeOffsetIssue) {
-          if (!sourceId || (node as any).sourceId === sourceId) {
-            result.push(node);
-          }
+          result.push(node);
         }
       }
       return result;
@@ -3504,10 +3532,10 @@ class DatabaseService {
       }
 
       // Also update the cache so getAllNodes() returns the updated value
-      for (const [nodeNum, cachedNode] of this.nodesCache.entries()) {
+      for (const [key, cachedNode] of this.nodesCache.entries()) {
         if (cachedNode.nodeId === nodeId) {
           cachedNode.mobile = isMobile;
-          this.nodesCache.set(nodeNum, cachedNode);
+          this.nodesCache.set(key, cachedNode);
           break;
         }
       }
@@ -3730,8 +3758,14 @@ class DatabaseService {
     // For PostgreSQL/MySQL, update cache and fire-and-forget async delete
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
       // Remove from cache immediately
-      const existed = this.nodesCache.has(nodeNum);
-      this.nodesCache.delete(nodeNum);
+      // TODO Phase 3C: sourceId needed here — deleteNode signature is nodeNum-only.
+      let existed = false;
+      for (const [key, node] of this.nodesCache.entries()) {
+        if (node.nodeNum === nodeNum) {
+          existed = true;
+          this.nodesCache.delete(key);
+        }
+      }
 
       // Fire-and-forget async deletion of all associated data
       this.deleteNodeAsync(nodeNum).catch(err => {
@@ -5566,13 +5600,13 @@ class DatabaseService {
 
       // Update cache for PostgreSQL/MySQL
       if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-        const existingNode = this.nodesCache.get(nodeNum);
-        if (existingNode) {
+        // TODO Phase 3C: sourceId needed here — updateNodeRemoteAdminStatusAsync signature is nodeNum-only.
+        for (const existingNode of this.nodesCache.values()) {
+          if (existingNode.nodeNum !== nodeNum) continue;
           existingNode.hasRemoteAdmin = hasRemoteAdmin;
           existingNode.lastRemoteAdminCheck = Date.now();
           existingNode.remoteAdminMetadata = metadata ?? undefined;
           existingNode.updatedAt = Date.now();
-          this.nodesCache.set(nodeNum, existingNode);
         }
       }
     } catch (error) {
@@ -7628,7 +7662,10 @@ class DatabaseService {
       }
 
       // Also remove from cache
-      this.nodesCache.delete(nodeNum);
+      // TODO Phase 3C: sourceId needed here — deleteNodeAsync signature is nodeNum-only.
+      for (const [key, node] of this.nodesCache.entries()) {
+        if (node.nodeNum === nodeNum) this.nodesCache.delete(key);
+      }
 
       logger.debug(`Deleted node ${nodeNum}: messages=${messagesDeleted}, traceroutes=${traceroutesDeleted}, telemetry=${telemetryDeleted}, node=${nodeDeleted}`);
     } catch (error) {
@@ -8107,8 +8144,9 @@ class DatabaseService {
   setNodeFavorite(nodeNum: number, isFavorite: boolean, favoriteLocked?: boolean): void {
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode) {
+      // TODO Phase 3C: sourceId needed here — setNodeFavorite signature is nodeNum-only.
+      for (const cachedNode of this.nodesCache.values()) {
+        if (cachedNode.nodeNum !== nodeNum) continue;
         cachedNode.isFavorite = isFavorite;
         if (favoriteLocked !== undefined) {
           cachedNode.favoriteLocked = favoriteLocked;
@@ -8163,8 +8201,9 @@ class DatabaseService {
   setNodeFavoriteLocked(nodeNum: number, favoriteLocked: boolean): void {
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode) {
+      // TODO Phase 3C: sourceId needed here — setNodeFavoriteLocked signature is nodeNum-only.
+      for (const cachedNode of this.nodesCache.values()) {
+        if (cachedNode.nodeNum !== nodeNum) continue;
         cachedNode.favoriteLocked = favoriteLocked;
         cachedNode.updatedAt = Date.now();
       }
@@ -8219,8 +8258,9 @@ class DatabaseService {
 
     // For PostgreSQL/MySQL, update cache and fire-and-forget
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const cachedNode = this.nodesCache.get(nodeNum);
-      if (cachedNode) {
+      // TODO Phase 3C: sourceId needed here — setNodeIgnored signature is nodeNum-only.
+      for (const cachedNode of this.nodesCache.values()) {
+        if (cachedNode.nodeNum !== nodeNum) continue;
         cachedNode.isIgnored = isIgnored;
         cachedNode.updatedAt = Date.now();
       }
@@ -8341,21 +8381,24 @@ class DatabaseService {
 
     // For PostgreSQL/MySQL, use cache and async repo
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const existingNode = this.nodesCache.get(nodeNum);
+      // TODO Phase 3C: sourceId needed here — setNodePositionOverride signature is nodeNum-only.
+      let existingNode: DbNode | undefined;
+      for (const node of this.nodesCache.values()) {
+        if (node.nodeNum === nodeNum) { existingNode = node; break; }
+      }
       if (!existingNode) {
         const nodeId = `!${nodeNum.toString(16).padStart(8, '0')}`;
         logger.warn(`⚠️ Failed to update position override for node ${nodeId} (${nodeNum}): node not found in cache`);
         throw new Error(`Node ${nodeId} not found`);
       }
 
-      // Update cache
+      // Update cache (in-place)
       existingNode.positionOverrideEnabled = enabled;
       existingNode.latitudeOverride = enabled && latitude !== undefined ? latitude : undefined;
       existingNode.longitudeOverride = enabled && longitude !== undefined ? longitude : undefined;
       existingNode.altitudeOverride = enabled && altitude !== undefined ? altitude : undefined;
       existingNode.positionOverrideIsPrivate = enabled && isPrivate;
       existingNode.updatedAt = now;
-      this.nodesCache.set(nodeNum, existingNode);
 
       // Fire and forget async update
       if (this.nodesRepo) {
@@ -8407,7 +8450,11 @@ class DatabaseService {
   } | null {
     // For PostgreSQL/MySQL, use cache
     if (this.drizzleDbType === 'postgres' || this.drizzleDbType === 'mysql') {
-      const node = this.nodesCache.get(nodeNum);
+      // TODO Phase 3C: sourceId needed here — getNodePositionOverride signature is nodeNum-only.
+      let node: DbNode | undefined;
+      for (const n of this.nodesCache.values()) {
+        if (n.nodeNum === nodeNum) { node = n; break; }
+      }
       if (!node) {
         return null;
       }
