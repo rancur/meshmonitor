@@ -28,24 +28,23 @@ export class NodesRepository extends BaseRepository {
   }
 
   /**
-   * Get a node by nodeNum
+   * Get a node by nodeNum, optionally scoped to a source.
    *
-   * Phase 1: sourceId is accepted but NOT yet enforced in the WHERE clause
-   * (the body still queries by nodeNum alone). This will change in Phase 2
-   * once all call sites pass a real sourceId.
-   *
-   * TODO Phase 2: remove the __LEGACY__ default and add `sourceId` to the
-   * WHERE clause. Every call site must supply a real sourceId.
+   * When sourceId is provided, the WHERE clause is scoped per-source — required
+   * after migration 029 made (nodeNum, sourceId) the composite PK. When omitted,
+   * returns the first matching row across any source (legacy / cross-source
+   * lookups). TODO Phase 3: make sourceId required once all call sites are
+   * updated.
    */
-  async getNode(nodeNum: number, sourceId: string = '__LEGACY__'): Promise<DbNode | null> {
-    if (sourceId === '__LEGACY__') {
-      logger.warn(`getNode(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
-    }
+  async getNode(nodeNum: number, sourceId?: string): Promise<DbNode | null> {
     const { nodes } = this.tables;
+    const whereClause = sourceId
+      ? and(eq(nodes.nodeNum, nodeNum), eq(nodes.sourceId, sourceId))
+      : eq(nodes.nodeNum, nodeNum);
     const result = await this.db
       .select()
       .from(nodes)
-      .where(eq(nodes.nodeNum, nodeNum))
+      .where(whereClause)
       .limit(1);
 
     if (result.length === 0) return null;
@@ -72,20 +71,22 @@ export class NodesRepository extends BaseRepository {
   }
 
   /**
-   * Get a node by nodeId
+   * Get a node by nodeId, optionally scoped to a source.
    *
-   * TODO Phase 2: remove the __LEGACY__ default and add `sourceId` to the
-   * WHERE clause. Every call site must supply a real sourceId.
+   * After migration 029, (nodeId, sourceId) is the composite unique key. When
+   * sourceId is provided, the lookup is scoped per-source. When omitted,
+   * returns the first matching row across any source.
+   * TODO Phase 3: make sourceId required once all call sites are updated.
    */
-  async getNodeByNodeId(nodeId: string, sourceId: string = '__LEGACY__'): Promise<DbNode | null> {
-    if (sourceId === '__LEGACY__') {
-      logger.warn(`getNodeByNodeId(${nodeId}) called without sourceId — Phase 2 must update this call site`);
-    }
+  async getNodeByNodeId(nodeId: string, sourceId?: string): Promise<DbNode | null> {
     const { nodes } = this.tables;
+    const whereClause = sourceId
+      ? and(eq(nodes.nodeId, nodeId), eq(nodes.sourceId, sourceId))
+      : eq(nodes.nodeId, nodeId);
     const result = await this.db
       .select()
       .from(nodes)
-      .where(eq(nodes.nodeId, nodeId))
+      .where(whereClause)
       .limit(1);
 
     if (result.length === 0) return null;
@@ -147,7 +148,7 @@ export class NodesRepository extends BaseRepository {
 
     const now = this.now();
     const { nodes } = this.tables;
-    const existingNode = await this.getNode(nodeData.nodeNum);
+    const existingNode = await this.getNode(nodeData.nodeNum, sourceId);
 
     if (existingNode) {
       // Update existing node - coerceBigintField is safe for all dialects (just Math.floor)
@@ -405,34 +406,19 @@ export class NodesRepository extends BaseRepository {
   }
 
   /**
-   * Update security flags for a node.
+   * Update security flags for a node, scoped per-source.
    *
-   * Unlike other single-node methods in this Phase 1 commit, sourceId IS
-   * applied to the WHERE clause here because the composite PK migration
-   * (029) makes nodeNum alone non-unique, and the security scanner operates
-   * per-source so callers always know which source the flag belongs to.
-   *
-   * Callers that haven't been updated yet pass the temporary __LEGACY__
-   * sentinel; in that case we fall back to the old behavior for
-   * compatibility, but log a warning.
-   * TODO Phase 2: remove the __LEGACY__ fallback.
+   * After migration 029, (nodeNum, sourceId) is the composite PK so the
+   * duplicate-key scanner must always pass a real sourceId.
    */
   async updateNodeSecurityFlags(
     nodeNum: number,
     duplicateKeyDetected: boolean,
-    keySecurityIssueDetails?: string,
-    sourceId: string = '__LEGACY__'
+    keySecurityIssueDetails: string | undefined,
+    sourceId: string
   ): Promise<void> {
     const now = this.now();
     const { nodes } = this.tables;
-
-    const whereClause = sourceId === '__LEGACY__'
-      ? eq(nodes.nodeNum, nodeNum)
-      : and(eq(nodes.nodeNum, nodeNum), eq(nodes.sourceId, sourceId));
-
-    if (sourceId === '__LEGACY__') {
-      logger.warn(`updateNodeSecurityFlags(${nodeNum}) called without sourceId — Phase 2 must update this call site`);
-    }
 
     await this.db
       .update(nodes)
@@ -441,7 +427,7 @@ export class NodesRepository extends BaseRepository {
         keySecurityIssueDetails: keySecurityIssueDetails ?? null,
         updatedAt: now,
       })
-      .where(whereClause);
+      .where(and(eq(nodes.nodeNum, nodeNum), eq(nodes.sourceId, sourceId)));
   }
 
   /**

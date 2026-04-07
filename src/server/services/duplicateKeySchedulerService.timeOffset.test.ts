@@ -99,7 +99,7 @@ describe('Time Offset Detection', () => {
     await duplicateKeySchedulerService.runScan('src-1');
 
     expect(databaseService.updateNodeTimeOffsetFlagsAsync).toHaveBeenCalledWith(
-      100, true, expect.any(Number)
+      100, true, expect.any(Number), 'src-1'
     );
     // Offset should be ~1860 seconds (31 minutes)
     const call = (databaseService.updateNodeTimeOffsetFlagsAsync as any).mock.calls.find(
@@ -127,7 +127,7 @@ describe('Time Offset Detection', () => {
     await duplicateKeySchedulerService.runScan('src-1');
 
     expect(databaseService.updateNodeTimeOffsetFlagsAsync).toHaveBeenCalledWith(
-      200, false, expect.any(Number)
+      200, false, expect.any(Number), 'src-1'
     );
   });
 
@@ -142,7 +142,7 @@ describe('Time Offset Detection', () => {
     await duplicateKeySchedulerService.runScan('src-1');
 
     expect(databaseService.updateNodeTimeOffsetFlagsAsync).toHaveBeenCalledWith(
-      300, false, null
+      300, false, null, 'src-1'
     );
   });
 
@@ -163,7 +163,7 @@ describe('Time Offset Detection', () => {
     await duplicateKeySchedulerService.runScan('src-1');
 
     expect(databaseService.updateNodeTimeOffsetFlagsAsync).toHaveBeenCalledWith(
-      400, false, expect.any(Number)
+      400, false, expect.any(Number), 'src-1'
     );
   });
 });

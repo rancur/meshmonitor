@@ -171,7 +171,7 @@ class DuplicateKeySchedulerService {
         for (const node of allNodesList) {
           if (node.duplicateKeyDetected) {
             const details = node.keyIsLowEntropy ? 'Known low-entropy key detected' : undefined;
-            await databaseService.nodes.updateNodeSecurityFlags(Number(node.nodeNum), false, details);
+            await databaseService.nodes.updateNodeSecurityFlags(Number(node.nodeNum), false, details, sourceId);
           }
         }
       } else {
@@ -184,7 +184,7 @@ class DuplicateKeySchedulerService {
         for (const node of allNodesList) {
           if (node.duplicateKeyDetected && !currentDuplicateNodes.has(Number(node.nodeNum))) {
             const details = node.keyIsLowEntropy ? 'Known low-entropy key detected' : undefined;
-            await databaseService.nodes.updateNodeSecurityFlags(Number(node.nodeNum), false, details);
+            await databaseService.nodes.updateNodeSecurityFlags(Number(node.nodeNum), false, details, sourceId);
             clearedCount++;
           }
         }
@@ -204,7 +204,7 @@ class DuplicateKeySchedulerService {
               ? `Known low-entropy key; Key shared with nodes: ${otherNodes.join(', ')}`
               : `Key shared with nodes: ${otherNodes.join(', ')}`;
 
-            await databaseService.nodes.updateNodeSecurityFlags(Number(nodeNum), true, details);
+            await databaseService.nodes.updateNodeSecurityFlags(Number(nodeNum), true, details, sourceId);
             updateCount++;
           }
 
@@ -330,7 +330,7 @@ class DuplicateKeySchedulerService {
         const stateChanged = isOffsetExcessive !== !!wasOffsetIssue;
 
         if (stateChanged) {
-          await databaseService.updateNodeTimeOffsetFlagsAsync(Number(nodeNum), isOffsetExcessive, offsetSeconds);
+          await databaseService.updateNodeTimeOffsetFlagsAsync(Number(nodeNum), isOffsetExcessive, offsetSeconds, sourceId);
           if (isOffsetExcessive) {
             flaggedCount++;
             logger.warn(`🕐 [${sourceId}] Time offset: Node ${nodeNum} offset ${offsetSeconds}s`);
@@ -342,7 +342,7 @@ class DuplicateKeySchedulerService {
 
       for (const node of allNodes) {
         if (node.isTimeOffsetIssue && !nodesWithTimestamps.has(Number(node.nodeNum))) {
-          await databaseService.updateNodeTimeOffsetFlagsAsync(Number(node.nodeNum), false, null);
+          await databaseService.updateNodeTimeOffsetFlagsAsync(Number(node.nodeNum), false, null, sourceId);
           clearedCount++;
         }
       }

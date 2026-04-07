@@ -297,8 +297,8 @@ router.post('/nodes/:nodeNum/clear', requirePermission('security', 'write'), asy
       keySecurityIssueDetails: null, // null explicitly clears the field (undefined would preserve existing value)
     });
 
-    // Clear time offset flags
-    await databaseService.updateNodeTimeOffsetFlagsAsync(nodeNum, false, null);
+    // Clear time offset flags (scoped to the node's source per migration 029)
+    await databaseService.updateNodeTimeOffsetFlagsAsync(nodeNum, false, null, (node as any).sourceId);
 
     // Log the action
     databaseService.auditLogAsync(

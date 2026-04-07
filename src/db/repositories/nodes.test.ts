@@ -399,10 +399,10 @@ function runNodesTests(getBackend: () => TestBackend) {
       return;
     }
 
-    await repo.upsertNode(makeNode(700));
-    await repo.updateNodeSecurityFlags(700, true, 'Key shared with Node 701');
+    await repo.upsertNode(makeNode(700), 'test-src');
+    await repo.updateNodeSecurityFlags(700, true, 'Key shared with Node 701', 'test-src');
 
-    const node = await repo.getNode(700);
+    const node = await repo.getNode(700, 'test-src');
     expect(node).not.toBeNull();
     expect(node!.duplicateKeyDetected).toBe(true);
     expect(node!.keySecurityIssueDetails).toBe('Key shared with Node 701');
@@ -415,11 +415,11 @@ function runNodesTests(getBackend: () => TestBackend) {
       return;
     }
 
-    await repo.upsertNode(makeNode(701));
-    await repo.updateNodeSecurityFlags(701, true, 'Some details');
-    await repo.updateNodeSecurityFlags(701, false);
+    await repo.upsertNode(makeNode(701), 'test-src');
+    await repo.updateNodeSecurityFlags(701, true, 'Some details', 'test-src');
+    await repo.updateNodeSecurityFlags(701, false, undefined, 'test-src');
 
-    const node = await repo.getNode(701);
+    const node = await repo.getNode(701, 'test-src');
     expect(node!.duplicateKeyDetected).toBe(false);
     expect(node!.keySecurityIssueDetails).toBeNull();
   });
