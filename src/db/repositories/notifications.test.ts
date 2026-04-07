@@ -486,6 +486,7 @@ function runNotificationsTests(getBackend: () => TestBackend) {
 
       await repo.saveSubscription({
         userId: 1,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/sub1',
         p256dhKey: 'key-p256dh-1',
         authKey: 'key-auth-1',
@@ -507,6 +508,7 @@ function runNotificationsTests(getBackend: () => TestBackend) {
 
       await repo.saveSubscription({
         userId: 1,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/sub1',
         p256dhKey: 'key-old',
         authKey: 'auth-old',
@@ -514,6 +516,7 @@ function runNotificationsTests(getBackend: () => TestBackend) {
 
       await repo.saveSubscription({
         userId: 1,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/sub1',
         p256dhKey: 'key-new',
         authKey: 'auth-new',
@@ -542,12 +545,14 @@ function runNotificationsTests(getBackend: () => TestBackend) {
 
       await repo.saveSubscription({
         userId: 1,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/a',
         p256dhKey: 'k1',
         authKey: 'a1',
       });
       await repo.saveSubscription({
         userId: 2,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/b',
         p256dhKey: 'k2',
         authKey: 'a2',
@@ -565,12 +570,14 @@ function runNotificationsTests(getBackend: () => TestBackend) {
 
       await repo.saveSubscription({
         userId: 1,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/to-remove',
         p256dhKey: 'k1',
         authKey: 'a1',
       });
       await repo.saveSubscription({
         userId: 1,
+        sourceId: 'src-test',
         endpoint: 'https://push.example.com/to-keep',
         p256dhKey: 'k2',
         authKey: 'a2',
@@ -597,8 +604,8 @@ function runNotificationsTests(getBackend: () => TestBackend) {
       await backend.exec(insertUserSql(backend, 1, 'user1'));
       await backend.exec(insertUserSql(backend, 2, 'user2'));
 
-      await repo.saveSubscription({ userId: 1, endpoint: 'https://a.com', p256dhKey: 'k1', authKey: 'a1' });
-      await repo.saveSubscription({ userId: 2, endpoint: 'https://b.com', p256dhKey: 'k2', authKey: 'a2' });
+      await repo.saveSubscription({ userId: 1, sourceId: 'src-test', endpoint: 'https://a.com', p256dhKey: 'k1', authKey: 'a1' });
+      await repo.saveSubscription({ userId: 2, sourceId: 'src-test', endpoint: 'https://b.com', p256dhKey: 'k2', authKey: 'a2' });
 
       const all = await repo.getAllSubscriptions();
       expect(all.length).toBeGreaterThanOrEqual(2);

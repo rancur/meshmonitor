@@ -117,7 +117,7 @@ describe('saveUserNotificationPreferencesAsync', () => {
   it('saves preferences and returns true', async () => {
     const result = await saveUserNotificationPreferencesAsync(10, defaultPrefs);
     expect(result).toBe(true);
-    expect(mockDb.notifications.saveUserPreferences).toHaveBeenCalledWith(10, defaultPrefs);
+    expect(mockDb.notifications.saveUserPreferences).toHaveBeenCalledWith(10, defaultPrefs, undefined);
   });
 
   it('returns false on database error', async () => {
