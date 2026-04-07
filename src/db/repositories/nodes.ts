@@ -870,20 +870,26 @@ export class NodesRepository extends BaseRepository {
    */
   async getInactiveMonitoredNodes(
     nodeIds: string[],
-    cutoffSeconds: number
+    cutoffSeconds: number,
+    sourceId?: string
   ): Promise<Array<{ nodeNum: number; nodeId: string; longName: string | null; shortName: string | null; lastHeard: number | null }>> {
     if (nodeIds.length === 0) return [];
 
     try {
       const { nodes } = this.tables;
+      const conditions = [
+        inArray(nodes.nodeId, nodeIds),
+        isNotNull(nodes.lastHeard),
+        lt(nodes.lastHeard, cutoffSeconds),
+      ];
+      // Phase C: scope to a specific source so per-source inactive checks don't bleed across sources
+      if (sourceId) {
+        conditions.push(eq(nodes.sourceId, sourceId));
+      }
       const rows = await this.db
         .select({ nodeNum: nodes.nodeNum, nodeId: nodes.nodeId, longName: nodes.longName, shortName: nodes.shortName, lastHeard: nodes.lastHeard })
         .from(nodes)
-        .where(and(
-          inArray(nodes.nodeId, nodeIds),
-          isNotNull(nodes.lastHeard),
-          lt(nodes.lastHeard, cutoffSeconds)
-        ))
+        .where(and(...conditions))
         .orderBy(asc(nodes.lastHeard));
       return rows.map((r: any) => ({ ...r, nodeNum: Number(r.nodeNum) }));
     } catch (error) {

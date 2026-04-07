@@ -9835,10 +9835,18 @@ let server: ReturnType<typeof app.listen>;
       if (pushNotificationService.isAvailable()) enabledFeatures.push('Web Push');
       if (appriseNotificationService.isAvailable()) enabledFeatures.push('Apprise');
 
-      serverEventNotificationService.notifyServerStart({
-        version: packageJson.version,
-        features: enabledFeatures,
-      });
+      // Phase C: dispatch server-start per source so per-source subscribers/permissions apply
+      const enabledSources = await databaseService.sources.getEnabledSources();
+      if (enabledSources.length === 0) {
+        logger.debug('No enabled sources — skipping server-start notification');
+      }
+      for (const src of enabledSources) {
+        await serverEventNotificationService.notifyServerStart(
+          { version: packageJson.version, features: enabledFeatures },
+          src.id,
+          src.name
+        );
+      }
     } catch (error) {
       logger.error('Failed to send server start notification:', error);
     }

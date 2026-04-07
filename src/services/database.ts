@@ -1991,15 +1991,23 @@ class DatabaseService {
         if (nodeData.nodeNum !== 4294967295 && !wasComplete &&
             !this.newNodeNotifiedSet.has(nodeData.nodeNum) && isNodeComplete(updatedNode)) {
           this.newNodeNotifiedSet.add(nodeData.nodeNum);
-          import('../server/services/notificationService.js').then(({ notificationService }) => {
-            notificationService.notifyNewNode(
+          const newNodeSourceId = (updatedNode as any).sourceId ?? (nodeData as any).sourceId ?? 'default';
+          import('../server/services/notificationService.js').then(async ({ notificationService }) => {
+            let sourceName = newNodeSourceId;
+            try {
+              const src = await this.sources.getSource(newNodeSourceId);
+              if (src?.name) sourceName = src.name;
+            } catch { /* fall back to id */ }
+            await notificationService.notifyNewNode(
               updatedNode.nodeId!,
               updatedNode.longName!,
               updatedNode.shortName!,
               updatedNode.hwModel ?? undefined,
-              updatedNode.hopsAway
-            ).catch(err => logger.error('Failed to send new node notification:', err));
-          }).catch(err => logger.error('Failed to import notification service:', err));
+              updatedNode.hopsAway,
+              newNodeSourceId,
+              sourceName
+            );
+          }).catch(err => logger.error('Failed to send new node notification:', err));
         }
       }
       return;
@@ -2169,15 +2177,23 @@ class DatabaseService {
         };
         if (isNodeComplete(mergedNode)) {
           this.newNodeNotifiedSet.add(nodeData.nodeNum);
-          import('../server/services/notificationService.js').then(({ notificationService }) => {
-            notificationService.notifyNewNode(
+          const newNodeSourceId = (nodeData as any).sourceId ?? (existingNode as any)?.sourceId ?? 'default';
+          import('../server/services/notificationService.js').then(async ({ notificationService }) => {
+            let sourceName = newNodeSourceId;
+            try {
+              const src = await this.sources.getSource(newNodeSourceId);
+              if (src?.name) sourceName = src.name;
+            } catch { /* fall back to id */ }
+            await notificationService.notifyNewNode(
               mergedNode.nodeId!,
               mergedNode.longName!,
               mergedNode.shortName!,
               mergedNode.hwModel ?? undefined,
-              nodeData.hopsAway ?? existingNode?.hopsAway
-            ).catch(err => logger.error('Failed to send new node notification:', err));
-          }).catch(err => logger.error('Failed to import notification service:', err));
+              nodeData.hopsAway ?? existingNode?.hopsAway,
+              newNodeSourceId,
+              sourceName
+            );
+          }).catch(err => logger.error('Failed to send new node notification:', err));
         }
       }
     }

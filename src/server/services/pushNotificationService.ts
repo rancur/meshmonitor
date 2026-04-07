@@ -18,6 +18,10 @@ export interface PushNotificationPayload {
   data?: any;
   requireInteraction?: boolean;
   silent?: boolean;
+  /** Phase C: source this notification originated from (optional for back-compat with broadcastWithFiltering paths). */
+  sourceId?: string;
+  /** Phase C: human-readable source name. */
+  sourceName?: string;
 }
 
 class PushNotificationService {
@@ -484,9 +488,12 @@ class PushNotificationService {
   public async broadcastToPreferenceUsers(
     preferenceKey: 'notifyOnNewNode' | 'notifyOnTraceroute' | 'notifyOnInactiveNode' | 'notifyOnServerEvents',
     payload: PushNotificationPayload,
-    targetUserId?: number
+    targetUserId?: number,
+    sourceId?: string
   ): Promise<{ sent: number; failed: number; filtered: number }> {
-    // TODO Phase C: scope preference broadcasts by sourceId once callers (inactive/serverEvent) pass one
+    // Phase C: scope preference broadcasts by sourceId so prefs/permissions are per-source.
+    // sourceId defaults to the payload's sourceId if not explicitly given.
+    const effectiveSourceId = sourceId ?? payload.sourceId;
     const subscriptions = await this.getAllSubscriptionsAsync();
     let sent = 0;
     let failed = 0;
@@ -528,8 +535,23 @@ class PushNotificationService {
         continue;
       }
 
-      // Check if user has this preference enabled
-      const prefs = await getUserNotificationPreferencesAsync(userId);
+      // Phase C: per-source permission check
+      if (effectiveSourceId) {
+        try {
+          const allowed = await databaseService.checkPermissionAsync(userId, 'messages', 'read', effectiveSourceId);
+          if (!allowed) {
+            filtered++;
+            continue;
+          }
+        } catch (err) {
+          logger.error(`Permission check failed for user ${userId}:`, err);
+          filtered++;
+          continue;
+        }
+      }
+
+      // Check if user has this preference enabled (per-source if sourceId provided)
+      const prefs = await getUserNotificationPreferencesAsync(userId, effectiveSourceId);
       if (!prefs || !prefs.enableWebPush || !prefs[preferenceKey]) {
         filtered++;
         continue;

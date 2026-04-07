@@ -389,6 +389,25 @@ class MeshtasticManager implements ISourceManager {
   private channel0Exists = false;  // Cache for channel 0 existence check to avoid repeated DB queries
   private preConfigChannelSnapshot: { id: number; psk?: string | null; name?: string | null }[] = [];  // Channel state before config sync
 
+  // Phase C: lazily-cached human-readable source name for notifications
+  private cachedSourceName: string | null = null;
+
+  /**
+   * Lazily resolve the human-readable source name from the database.
+   * Cached after first lookup. Falls back to the sourceId if the source row is missing.
+   */
+  private async getSourceName(): Promise<string> {
+    if (this.cachedSourceName !== null) return this.cachedSourceName;
+    try {
+      const source = await databaseService.sources.getSource(this.sourceId);
+      this.cachedSourceName = source?.name ?? this.sourceId;
+    } catch (err) {
+      logger.debug(`Could not resolve source name for ${this.sourceId}:`, err);
+      this.cachedSourceName = this.sourceId;
+    }
+    return this.cachedSourceName;
+  }
+
   get sourceType(): 'meshtastic_tcp' {
     return 'meshtastic_tcp';
   }
@@ -685,7 +704,7 @@ class MeshtasticManager implements ISourceManager {
     this.localNodeInfo = null;
 
     // Notify server event service of connection (handles initial vs reconnect logic)
-    await serverEventNotificationService.notifyNodeConnected();
+    await serverEventNotificationService.notifyNodeConnected(this.sourceId, await this.getSourceName());
 
     try {
       // Enable message capture for virtual node server
@@ -853,7 +872,7 @@ class MeshtasticManager implements ISourceManager {
     // Notify server event service of disconnection
     // Skip notification if this is a user-initiated disconnect (already notified in userDisconnect())
     if (!this.userDisconnectedState) {
-      await serverEventNotificationService.notifyNodeDisconnected();
+      await serverEventNotificationService.notifyNodeDisconnected(this.sourceId, await this.getSourceName());
     }
 
     // Only auto-reconnect if not in user-disconnected state
@@ -5439,7 +5458,8 @@ class MeshtasticManager implements ISourceManager {
       }
 
       // Send notification for successful traceroute
-      notificationService.notifyTraceroute(fromNodeId, toNodeId, routeText)
+      this.getSourceName()
+        .then(sourceName => notificationService.notifyTraceroute(fromNodeId, toNodeId, routeText, this.sourceId, sourceName))
         .catch(err => logger.error('Failed to send traceroute notification:', err));
 
       // Calculate and store route segment distances, and estimate positions for nodes without GPS
@@ -11700,7 +11720,7 @@ class MeshtasticManager implements ISourceManager {
 
     // Notify about disconnect before actually disconnecting
     // This ensures users get notified even for user-initiated disconnects
-    await serverEventNotificationService.notifyNodeDisconnected();
+    await serverEventNotificationService.notifyNodeDisconnected(this.sourceId, await this.getSourceName());
 
     if (this.transport) {
       try {

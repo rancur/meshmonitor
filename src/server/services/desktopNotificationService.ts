@@ -136,18 +136,31 @@ class DesktopNotificationService {
    */
   async broadcastToPreferenceUsers(
     preferenceName: string,
-    payload: DesktopNotificationPayload
+    payload: DesktopNotificationPayload,
+    sourceId?: string
   ): Promise<{ sent: number; failed: number; filtered: number }> {
     if (!this.enabled) return { sent: 0, failed: 0, filtered: 0 };
 
-    // TODO Phase C: scope preference broadcasts by sourceId once callers pass one
+    // Phase C: scope preference broadcasts by sourceId
+    const effectiveSourceId = sourceId ?? payload.sourceId;
     try {
       const users = await databaseService.auth.getAllUsers();
 
       for (const user of users) {
         if (!user.isActive) continue;
 
-        const prefs = await getUserNotificationPreferencesAsync(user.id);
+        // Phase C: per-source permission check
+        if (effectiveSourceId) {
+          try {
+            const allowed = await databaseService.checkPermissionAsync(user.id, 'messages', 'read', effectiveSourceId);
+            if (!allowed) continue;
+          } catch (err) {
+            logger.error(`Permission check failed for user ${user.id}:`, err);
+            continue;
+          }
+        }
+
+        const prefs = await getUserNotificationPreferencesAsync(user.id, effectiveSourceId);
         if (!prefs || !prefs.enableWebPush) continue;
         if (!(prefs as any)[preferenceName]) continue;
 

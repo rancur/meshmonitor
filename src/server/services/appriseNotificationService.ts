@@ -381,13 +381,15 @@ class AppriseNotificationService {
   public async broadcastToPreferenceUsers(
     preferenceKey: 'notifyOnNewNode' | 'notifyOnTraceroute' | 'notifyOnInactiveNode' | 'notifyOnServerEvents',
     payload: AppriseNotificationPayload,
-    targetUserId?: number
+    targetUserId?: number,
+    sourceId?: string
   ): Promise<{ sent: number; failed: number; filtered: number }> {
     let sent = 0;
     let failed = 0;
     let filtered = 0;
 
-    // TODO Phase C: scope preference broadcasts by sourceId once callers pass one
+    // Phase C: scope preference broadcasts by sourceId
+    const effectiveSourceId = sourceId ?? payload.sourceId;
     // Get all users with Apprise enabled and this preference enabled
     const users = await getUsersWithServiceEnabledAsync('apprise');
     logger.info(`📢 Broadcasting ${preferenceKey} notification to ${users.length} Apprise users${targetUserId ? ` (target user: ${targetUserId})` : ''}`);
@@ -418,8 +420,23 @@ class AppriseNotificationService {
         continue;
       }
 
-      // Check if user has this preference enabled and has URLs configured
-      const prefs = await getUserNotificationPreferencesAsync(userId);
+      // Phase C: per-source permission check
+      if (effectiveSourceId) {
+        try {
+          const allowed = await databaseService.checkPermissionAsync(userId, 'messages', 'read', effectiveSourceId);
+          if (!allowed) {
+            filtered++;
+            continue;
+          }
+        } catch (err) {
+          logger.error(`Permission check failed for user ${userId}:`, err);
+          filtered++;
+          continue;
+        }
+      }
+
+      // Check if user has this preference enabled (per-source) and has URLs configured
+      const prefs = await getUserNotificationPreferencesAsync(userId, effectiveSourceId);
       if (!prefs || !prefs.enableApprise || !prefs[preferenceKey]) {
         filtered++;
         continue;

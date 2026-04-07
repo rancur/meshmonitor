@@ -171,27 +171,34 @@ class NotificationService {
    * Only sends if user has notifyOnNewNode enabled.
    * Called when a node transitions from incomplete to complete (has longName, shortName, hwModel).
    */
-  public async notifyNewNode(nodeId: string, longName: string, shortName: string, hwModel: number | undefined, hopsAway: number | undefined): Promise<void> {
+  public async notifyNewNode(
+    nodeId: string,
+    longName: string,
+    shortName: string,
+    hwModel: number | undefined,
+    hopsAway: number | undefined,
+    sourceId: string,
+    sourceName: string
+  ): Promise<void> {
     try {
       const hopsText = hopsAway !== undefined ? ` (${hopsAway} ${hopsAway === 1 ? 'hop' : 'hops'} away)` : '';
       const hwModelText = hwModel !== undefined ? ` - ${getHardwareModelName(hwModel) || 'Unknown'}` : '';
       const payload: NotificationPayload = {
-        title: '🆕 New Node Discovered',
-        body: `${longName} (${shortName})${hwModelText}${hopsText}`,
+        title: `[${sourceName}] 🆕 New Node Discovered`,
+        body: `[${sourceName}] ${longName} (${shortName})${hwModelText}${hopsText}`,
         type: 'info',
-        // TODO Phase C: resolve real source for new-node discovery notifications
-        sourceId: 'default',
-        sourceName: 'default'
+        sourceId,
+        sourceName
       };
 
-      // Send to users with notifyOnNewNode enabled
+      // Send to users with notifyOnNewNode enabled, scoped to this source
       await Promise.allSettled([
-        pushNotificationService.broadcastToPreferenceUsers('notifyOnNewNode', payload),
-        appriseNotificationService.broadcastToPreferenceUsers('notifyOnNewNode', payload),
-        desktopNotificationService.broadcastToPreferenceUsers('notifyOnNewNode', payload)
+        pushNotificationService.broadcastToPreferenceUsers('notifyOnNewNode', payload, undefined, sourceId),
+        appriseNotificationService.broadcastToPreferenceUsers('notifyOnNewNode', payload, undefined, sourceId),
+        desktopNotificationService.broadcastToPreferenceUsers('notifyOnNewNode', payload, sourceId)
       ]);
 
-      logger.info(`📤 Sent new node notification for ${longName} (${shortName}) [${nodeId}]`);
+      logger.info(`📤 Sent new node notification for ${longName} (${shortName}) [${nodeId}] on ${sourceId}`);
     } catch (error) {
       logger.error('❌ Error sending new node notification:', error);
     }
@@ -201,25 +208,30 @@ class NotificationService {
    * Send notification for successful traceroute (bypasses normal filtering)
    * Only sends if user has notifyOnTraceroute enabled
    */
-  public async notifyTraceroute(fromNodeId: string, toNodeId: string, routeText: string): Promise<void> {
+  public async notifyTraceroute(
+    fromNodeId: string,
+    toNodeId: string,
+    routeText: string,
+    sourceId: string,
+    sourceName: string
+  ): Promise<void> {
     try {
       const payload: NotificationPayload = {
-        title: `🗺️ Traceroute: ${fromNodeId} → ${toNodeId}`,
-        body: routeText,
+        title: `[${sourceName}] 🗺️ Traceroute: ${fromNodeId} → ${toNodeId}`,
+        body: `[${sourceName}] ${routeText}`,
         type: 'success',
-        // TODO Phase C: resolve real source for traceroute notifications
-        sourceId: 'default',
-        sourceName: 'default'
+        sourceId,
+        sourceName
       };
 
-      // Send to users with notifyOnTraceroute enabled
+      // Send to users with notifyOnTraceroute enabled, scoped to this source
       await Promise.allSettled([
-        pushNotificationService.broadcastToPreferenceUsers('notifyOnTraceroute', payload),
-        appriseNotificationService.broadcastToPreferenceUsers('notifyOnTraceroute', payload),
-        desktopNotificationService.broadcastToPreferenceUsers('notifyOnTraceroute', payload)
+        pushNotificationService.broadcastToPreferenceUsers('notifyOnTraceroute', payload, undefined, sourceId),
+        appriseNotificationService.broadcastToPreferenceUsers('notifyOnTraceroute', payload, undefined, sourceId),
+        desktopNotificationService.broadcastToPreferenceUsers('notifyOnTraceroute', payload, sourceId)
       ]);
 
-      logger.info(`📤 Sent traceroute notification for ${fromNodeId} → ${toNodeId}`);
+      logger.info(`📤 Sent traceroute notification for ${fromNodeId} → ${toNodeId} on ${sourceId}`);
     } catch (error) {
       logger.error('❌ Error sending traceroute notification:', error);
     }
@@ -227,6 +239,7 @@ class NotificationService {
 
   /**
    * Broadcast to users who have a specific preference enabled
+   * Phase C: scoped to a specific sourceId (preferences and permissions are per-source)
    * Optionally target a specific user ID
    */
   public async broadcastToPreferenceUsers(
@@ -234,11 +247,11 @@ class NotificationService {
     payload: NotificationPayload,
     targetUserId?: number
   ): Promise<void> {
-    // Send to users with the preference enabled
+    // Send to users with the preference enabled, scoped to the payload's sourceId
     await Promise.allSettled([
-      pushNotificationService.broadcastToPreferenceUsers(preferenceKey, payload, targetUserId),
-      appriseNotificationService.broadcastToPreferenceUsers(preferenceKey, payload, targetUserId),
-      desktopNotificationService.broadcastToPreferenceUsers(preferenceKey, payload)
+      pushNotificationService.broadcastToPreferenceUsers(preferenceKey, payload, targetUserId, payload.sourceId),
+      appriseNotificationService.broadcastToPreferenceUsers(preferenceKey, payload, targetUserId, payload.sourceId),
+      desktopNotificationService.broadcastToPreferenceUsers(preferenceKey, payload, payload.sourceId)
     ]);
   }
 }
