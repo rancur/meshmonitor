@@ -110,9 +110,11 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ onTabChange, onSelectD
       const srcParam = sourceId ? `?sourceId=${encodeURIComponent(sourceId)}` : '';
       const [issuesData, statusData, mismatchData, deadNodesData] = await Promise.all([
         api.get<SecurityIssuesResponse>(`/api/security/issues${srcParam}`),
-        api.get<ScannerStatus>('/api/security/scanner/status'),
+        api.get<ScannerStatus>(`/api/security/scanner/status${srcParam}`),
         api.get<{ events: any[] }>('/api/security/key-mismatches'),
-        api.get<DeadNodesResponse>(`/api/security/dead-nodes${srcParam}`)
+        sourceId
+          ? api.get<DeadNodesResponse>(`/api/security/dead-nodes${srcParam}`)
+          : Promise.resolve({ nodes: [], count: 0, thresholdDays: 7 } as unknown as DeadNodesResponse),
       ]);
 
       setIssues(issuesData);
@@ -190,9 +192,13 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ onTabChange, onSelectD
   }, [t]);
 
   const triggerScan = useCallback(async () => {
+    if (!sourceId) {
+      setError(t('security.failed_scan'));
+      return;
+    }
     setScanning(true);
     try {
-      await api.post('/api/security/scanner/scan', {});
+      await api.post('/api/security/scanner/scan', { sourceId });
 
       // Wait a moment then refresh data
       setTimeout(fetchSecurityData, 2000);
@@ -201,7 +207,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ onTabChange, onSelectD
     } finally {
       setScanning(false);
     }
-  }, []);
+  }, [sourceId, t]);
 
   const formatDate = (timestamp: number | null) => {
     if (!timestamp) return t('security.never');
@@ -296,7 +302,7 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({ onTabChange, onSelectD
       // If pathname is /meshmonitor, extract that; otherwise use /
       const pathParts = window.location.pathname.split('/').filter(p => p);
       const basePath = pathParts.length > 0 ? `/${pathParts[0]}/` : '/';
-      const exportUrl = `${basePath}api/security/export?format=${format}`;
+      const exportUrl = `${basePath}api/security/export?format=${format}${sourceId ? `&sourceId=${encodeURIComponent(sourceId)}` : ''}`;
 
       const response = await fetch(exportUrl, {
         credentials: 'include'

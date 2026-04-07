@@ -2562,22 +2562,27 @@ class DatabaseService {
    * Get packet counts per node for the last hour (async version)
    * Excludes internal traffic (packets where both from and to are the local node)
    */
-  async getPacketCountsPerNodeLastHourAsync(): Promise<Array<{ nodeNum: number; packetCount: number }>> {
+  async getPacketCountsPerNodeLastHourAsync(sourceId?: string): Promise<Array<{ nodeNum: number; packetCount: number }>> {
     const oneHourAgo = Date.now() - 3600000;
 
-    // Get local node number to exclude internal traffic
-    const localNodeNumStr = this.getSetting('localNodeNum');
+    // Get local node number (per-source if provided) to exclude internal traffic
+    const localNodeNumStr = sourceId
+      ? await this.settings.getSettingForSource(sourceId, 'localNodeNum')
+      : this.getSetting('localNodeNum');
     const localNodeNum = localNodeNumStr ? parseInt(localNodeNumStr, 10) : null;
 
     if (this.drizzleDbType === 'postgres' && this.postgresPool) {
       try {
+        const sourceFilter = sourceId ? ' AND "sourceId" = $3' : '';
+        const params: any[] = [oneHourAgo, localNodeNum || -1];
+        if (sourceId) params.push(sourceId);
         const result = await this.postgresPool.query(`
           SELECT from_node as "nodeNum", COUNT(*)::int as "packetCount"
           FROM packet_log
           WHERE timestamp >= $1
-            AND NOT (from_node = $2 AND to_node = $2)
+            AND NOT (from_node = $2 AND to_node = $2)${sourceFilter}
           GROUP BY from_node
-        `, [oneHourAgo, localNodeNum || -1]);
+        `, params);
 
         return result.rows;
       } catch (error) {
@@ -2588,13 +2593,16 @@ class DatabaseService {
 
     if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
       try {
+        const sourceFilter = sourceId ? ' AND sourceId = ?' : '';
+        const params: any[] = [oneHourAgo, localNodeNum || -1, localNodeNum || -1];
+        if (sourceId) params.push(sourceId);
         const [rows] = await this.mysqlPool.query(`
           SELECT from_node as nodeNum, COUNT(*) as packetCount
           FROM packet_log
           WHERE timestamp >= ?
-            AND NOT (from_node = ? AND to_node = ?)
+            AND NOT (from_node = ? AND to_node = ?)${sourceFilter}
           GROUP BY from_node
-        `, [oneHourAgo, localNodeNum || -1, localNodeNum || -1]) as any;
+        `, params) as any;
 
         return rows.map((row: any) => ({
           nodeNum: Number(row.nodeNum),
@@ -2607,6 +2615,17 @@ class DatabaseService {
     }
 
     // SQLite fallback
+    if (sourceId) {
+      const stmt = this.db.prepare(`
+        SELECT from_node as nodeNum, COUNT(*) as packetCount
+        FROM packet_log
+        WHERE timestamp >= ?
+          AND NOT (from_node = ? AND to_node = ?)
+          AND sourceId = ?
+        GROUP BY from_node
+      `);
+      return stmt.all(oneHourAgo, localNodeNum || -1, localNodeNum || -1, sourceId) as Array<{ nodeNum: number; packetCount: number }>;
+    }
     return this.getPacketCountsPerNodeLastHour();
   }
 
@@ -2944,18 +2963,21 @@ class DatabaseService {
   /**
    * Get the latest telemetry record with non-null packetTimestamp per node
    */
-  async getLatestPacketTimestampsPerNodeAsync(): Promise<Array<{ nodeNum: number; timestamp: number; packetTimestamp: number }>> {
+  async getLatestPacketTimestampsPerNodeAsync(sourceId?: string): Promise<Array<{ nodeNum: number; timestamp: number; packetTimestamp: number }>> {
     // Jan 1 2020 in ms — anything earlier is not a valid Meshtastic timestamp
     // (nodes without GPS/NTP often report 0 or boot-relative seconds)
     const MIN_VALID_TIMESTAMP_MS = 1577836800000;
 
     if (this.drizzleDbType === 'postgres' && this.postgresPool) {
+      const sourceFilter = sourceId ? ' AND "sourceId" = $2' : '';
+      const params: any[] = [MIN_VALID_TIMESTAMP_MS];
+      if (sourceId) params.push(sourceId);
       const result = await this.postgresPool.query(`
         SELECT DISTINCT ON ("nodeNum") "nodeNum", "timestamp", "packetTimestamp"
         FROM telemetry
-        WHERE "packetTimestamp" IS NOT NULL AND "packetTimestamp" > $1
+        WHERE "packetTimestamp" IS NOT NULL AND "packetTimestamp" > $1${sourceFilter}
         ORDER BY "nodeNum", "timestamp" DESC
-      `, [MIN_VALID_TIMESTAMP_MS]);
+      `, params);
       return result.rows.map((r: any) => ({
         nodeNum: Number(r.nodeNum),
         timestamp: Number(r.timestamp),
@@ -2964,17 +2986,23 @@ class DatabaseService {
     }
 
     if (this.drizzleDbType === 'mysql' && this.mysqlPool) {
+      const sourceFilter = sourceId ? ' AND t.sourceId = ?' : '';
+      const innerFilter = sourceId ? ' AND sourceId = ?' : '';
+      const params: any[] = [MIN_VALID_TIMESTAMP_MS];
+      if (sourceId) params.push(sourceId);
+      params.push(MIN_VALID_TIMESTAMP_MS);
+      if (sourceId) params.push(sourceId);
       const [rows] = await this.mysqlPool.query(`
         SELECT t.nodeNum, t.timestamp, t.packetTimestamp
         FROM telemetry t
         INNER JOIN (
           SELECT nodeNum, MAX(timestamp) as maxTs
           FROM telemetry
-          WHERE packetTimestamp IS NOT NULL AND packetTimestamp > ?
+          WHERE packetTimestamp IS NOT NULL AND packetTimestamp > ?${innerFilter}
           GROUP BY nodeNum
         ) latest ON t.nodeNum = latest.nodeNum AND t.timestamp = latest.maxTs
-        WHERE t.packetTimestamp IS NOT NULL AND t.packetTimestamp > ?
-      `, [MIN_VALID_TIMESTAMP_MS, MIN_VALID_TIMESTAMP_MS]) as any;
+        WHERE t.packetTimestamp IS NOT NULL AND t.packetTimestamp > ?${sourceFilter}
+      `, params) as any;
       return (rows as any[]).map((r: any) => ({
         nodeNum: Number(r.nodeNum),
         timestamp: Number(r.timestamp),
@@ -2983,18 +3011,24 @@ class DatabaseService {
     }
 
     // SQLite
+    const sourceFilter = sourceId ? ' AND t.sourceId = ?' : '';
+    const innerFilter = sourceId ? ' AND sourceId = ?' : '';
+    const params: any[] = [MIN_VALID_TIMESTAMP_MS];
+    if (sourceId) params.push(sourceId);
+    params.push(MIN_VALID_TIMESTAMP_MS);
+    if (sourceId) params.push(sourceId);
     const stmt = this.db.prepare(`
       SELECT t.nodeNum, t.timestamp, t.packetTimestamp
       FROM telemetry t
       INNER JOIN (
         SELECT nodeNum, MAX(timestamp) as maxTs
         FROM telemetry
-        WHERE packetTimestamp IS NOT NULL AND packetTimestamp > ?
+        WHERE packetTimestamp IS NOT NULL AND packetTimestamp > ?${innerFilter}
         GROUP BY nodeNum
       ) latest ON t.nodeNum = latest.nodeNum AND t.timestamp = latest.maxTs
-      WHERE t.packetTimestamp IS NOT NULL AND t.packetTimestamp > ?
+      WHERE t.packetTimestamp IS NOT NULL AND t.packetTimestamp > ?${sourceFilter}
     `);
-    return (stmt.all(MIN_VALID_TIMESTAMP_MS, MIN_VALID_TIMESTAMP_MS) as any[]).map((r: any) => ({
+    return (stmt.all(...params) as any[]).map((r: any) => ({
       nodeNum: Number(r.nodeNum),
       timestamp: Number(r.timestamp),
       packetTimestamp: Number(r.packetTimestamp)

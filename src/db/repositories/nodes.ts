@@ -372,7 +372,7 @@ export class NodesRepository extends BaseRepository {
   /**
    * Get all nodes that have public keys
    */
-  async getNodesWithPublicKeys(): Promise<Array<{ nodeNum: number; publicKey: string | null }>> {
+  async getNodesWithPublicKeys(sourceId?: string): Promise<Array<{ nodeNum: number; publicKey: string | null }>> {
     const { nodes } = this.tables;
     const result = await this.db
       .select({ nodeNum: nodes.nodeNum, publicKey: nodes.publicKey })
@@ -380,7 +380,8 @@ export class NodesRepository extends BaseRepository {
       .where(
         and(
           isNotNull(nodes.publicKey),
-          ne(nodes.publicKey, '')
+          ne(nodes.publicKey, ''),
+          this.withSourceScope(nodes, sourceId)
         )
       );
 
