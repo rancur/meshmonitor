@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { Channel } from '../types/device';
 import { useToast } from './ToastContainer';
 import SectionNav from './SectionNav';
+import { useSource } from '../contexts/SourceContext';
 
 interface VapidStatus {
   configured: boolean;
@@ -38,6 +39,7 @@ interface NotificationsTabProps {
 const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const { sourceId: currentSourceId } = useSource();
   const [vapidStatus, setVapidStatus] = useState<VapidStatus | null>(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
@@ -181,7 +183,8 @@ const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
 
   const loadPreferences = async () => {
     try {
-      const response = await api.get<NotificationPreferences>('/api/push/preferences');
+      const qs = currentSourceId ? `?sourceId=${encodeURIComponent(currentSourceId)}` : '';
+      const response = await api.get<NotificationPreferences>(`/api/push/preferences${qs}`);
 
       setPreferences(response);
       setWhitelistText(response.whitelist.join('\n'));
@@ -239,7 +242,7 @@ const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
         appriseUrls: parsedAppriseUrls
       };
 
-      await api.post('/api/push/preferences', prefs);
+      await api.post('/api/push/preferences', { ...prefs, sourceId: currentSourceId ?? undefined });
       setPreferences(prefs);
       logger.info('Notification preferences saved');
       showToast(t('notifications.preferences_saved'), 'success');
@@ -316,7 +319,8 @@ const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
             p256dh: arrayBufferToBase64(subscription.getKey('p256dh')!),
             auth: arrayBufferToBase64(subscription.getKey('auth')!)
           }
-        }
+        },
+        sourceId: currentSourceId ?? undefined
       };
 
       await api.post('/api/push/subscribe', subscriptionData);
@@ -345,7 +349,8 @@ const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
       if (subscription) {
         await subscription.unsubscribe();
         await api.post('/api/push/unsubscribe', {
-          endpoint: subscription.endpoint
+          endpoint: subscription.endpoint,
+          sourceId: currentSourceId ?? undefined
         });
       }
 
@@ -402,7 +407,7 @@ const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
         ...preferences,
         appriseUrls: urls
       };
-      await api.post('/api/push/preferences', updatedPrefs);
+      await api.post('/api/push/preferences', { ...updatedPrefs, sourceId: currentSourceId ?? undefined });
       setPreferences(updatedPrefs);
       logger.info('Apprise URLs configured successfully');
       setAppriseTestStatus('✅ Configuration saved');
@@ -421,7 +426,7 @@ const NotificationsTab: React.FC<NotificationsTabProps> = ({ isAdmin }) => {
   const testAppriseConnection = async () => {
     setAppriseTestStatus('Sending test notification...');
     try {
-      const response = await api.post<{ success: boolean; message: string }>('/api/apprise/test', {});
+      const response = await api.post<{ success: boolean; message: string }>('/api/apprise/test', { sourceId: currentSourceId ?? undefined });
       if (response.success) {
         setAppriseTestStatus(`✅ ${response.message}`);
       } else {

@@ -137,7 +137,8 @@ export async function getUserNotificationPreferencesAsync(userId: number, source
  */
 export async function saveUserNotificationPreferencesAsync(
   userId: number,
-  preferences: NotificationPreferences
+  preferences: NotificationPreferences,
+  sourceId?: string
 ): Promise<boolean> {
   // Validate userId
   if (!Number.isInteger(userId) || userId <= 0) {
@@ -146,7 +147,7 @@ export async function saveUserNotificationPreferencesAsync(
   }
 
   try {
-    return await databaseService.notifications.saveUserPreferences(userId, preferences);
+    return await databaseService.notifications.saveUserPreferences(userId, preferences, sourceId);
   } catch (error) {
     logger.error(`Failed to save preferences for user ${userId}:`, error);
     return false;

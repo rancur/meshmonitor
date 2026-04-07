@@ -61,8 +61,8 @@ export interface NotificationPreferences {
  */
 export interface PushSubscriptionInput {
   userId?: number | null;
-  /** TODO Phase B: required — which source this subscription belongs to */
-  sourceId?: string;
+  /** Phase D: required — which source this subscription belongs to */
+  sourceId: string;
   endpoint: string;
   p256dhKey: string;
   authKey: string;
@@ -83,7 +83,7 @@ export class NotificationsRepository extends BaseRepository {
    * Get all push subscriptions
    */
   async getAllSubscriptions(sourceId?: string): Promise<DbPushSubscription[]> {
-    // TODO Phase B: sourceId should be required and filter by it
+    // Phase D: sourceId required at route layer; legacy callers may pass undefined to get all
     try {
       const { pushSubscriptions } = this.tables;
       const rows = sourceId
@@ -107,7 +107,6 @@ export class NotificationsRepository extends BaseRepository {
    * Get push subscriptions for a specific user
    */
   async getUserSubscriptions(userId: number | null | undefined, sourceId?: string): Promise<DbPushSubscription[]> {
-    // TODO Phase B: sourceId should be required
     try {
       const { pushSubscriptions } = this.tables;
       const filters = [] as any[];
@@ -137,8 +136,10 @@ export class NotificationsRepository extends BaseRepository {
   async saveSubscription(input: PushSubscriptionInput): Promise<void> {
     const now = this.now();
     const { pushSubscriptions } = this.tables;
-    // TODO Phase B: sourceId should be required on PushSubscriptionInput
-    const sourceId = input.sourceId ?? '';
+    if (!input.sourceId) {
+      throw new Error('saveSubscription requires sourceId');
+    }
+    const sourceId = input.sourceId;
     const values = {
       userId: input.userId ?? null,
       sourceId,
@@ -191,7 +192,6 @@ export class NotificationsRepository extends BaseRepository {
    * Get notification preferences for a user
    */
   async getUserPreferences(userId: number, sourceId?: string): Promise<NotificationPreferences | null> {
-    // TODO Phase B: sourceId should be required
     if (!Number.isInteger(userId) || userId <= 0) {
       logger.error(`Invalid userId: ${userId}`);
       return null;
@@ -227,7 +227,6 @@ export class NotificationsRepository extends BaseRepository {
    * Keeps branching: MySQL uses onDuplicateKeyUpdate, SQLite lacks notifyOnChannelMessage column.
    */
   async saveUserPreferences(userId: number, prefs: NotificationPreferences, sourceId?: string): Promise<boolean> {
-    // TODO Phase B: sourceId should be required
     if (!Number.isInteger(userId) || userId <= 0) {
       logger.error(`Invalid userId: ${userId}`);
       return false;

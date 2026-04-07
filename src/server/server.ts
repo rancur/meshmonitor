@@ -8149,43 +8149,65 @@ apiRouter.put('/push/vapid-subject', requireAdmin(), async (req, res) => {
 });
 
 // Subscribe to push notifications
-apiRouter.post('/push/subscribe', optionalAuth(), async (req, res) => {
-  try {
-    const { subscription } = req.body;
+apiRouter.post(
+  '/push/subscribe',
+  optionalAuth(),
+  requirePermission('messages', 'read', { sourceIdFrom: 'body' }),
+  async (req, res) => {
+    try {
+      const { subscription, sourceId } = req.body;
 
-    if (!subscription || !subscription.endpoint || !subscription.keys) {
-      return res.status(400).json({ error: 'Invalid subscription data' });
+      if (!subscription || !subscription.endpoint || !subscription.keys) {
+        return res.status(400).json({ error: 'Invalid subscription data' });
+      }
+      if (!sourceId || typeof sourceId !== 'string') {
+        return res.status(400).json({ error: 'sourceId is required' });
+      }
+
+      // Validate source exists
+      const source = await databaseService.sources.getSource(sourceId);
+      if (!source) {
+        return res.status(400).json({ error: `Unknown sourceId: ${sourceId}` });
+      }
+
+      const userId = req.session?.userId;
+      const userAgent = req.headers['user-agent'];
+
+      await pushNotificationService.saveSubscription(userId, subscription, userAgent, sourceId);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      logger.error('Error saving push subscription:', error);
+      res.status(500).json({ error: error.message || 'Failed to save subscription' });
     }
-
-    const userId = req.session?.userId;
-    const userAgent = req.headers['user-agent'];
-
-    await pushNotificationService.saveSubscription(userId, subscription, userAgent);
-
-    res.json({ success: true });
-  } catch (error: any) {
-    logger.error('Error saving push subscription:', error);
-    res.status(500).json({ error: error.message || 'Failed to save subscription' });
   }
-});
+);
 
 // Unsubscribe from push notifications
-apiRouter.post('/push/unsubscribe', optionalAuth(), async (req, res) => {
-  try {
-    const { endpoint } = req.body;
+apiRouter.post(
+  '/push/unsubscribe',
+  optionalAuth(),
+  requirePermission('messages', 'read', { sourceIdFrom: 'body' }),
+  async (req, res) => {
+    try {
+      const { endpoint, sourceId } = req.body;
 
-    if (!endpoint) {
-      return res.status(400).json({ error: 'Endpoint is required' });
+      if (!endpoint) {
+        return res.status(400).json({ error: 'Endpoint is required' });
+      }
+      if (!sourceId || typeof sourceId !== 'string') {
+        return res.status(400).json({ error: 'sourceId is required' });
+      }
+
+      await pushNotificationService.removeSubscription(endpoint);
+
+      res.json({ success: true });
+    } catch (error: any) {
+      logger.error('Error removing push subscription:', error);
+      res.status(500).json({ error: error.message || 'Failed to remove subscription' });
     }
-
-    await pushNotificationService.removeSubscription(endpoint);
-
-    res.json({ success: true });
-  } catch (error: any) {
-    logger.error('Error removing push subscription:', error);
-    res.status(500).json({ error: error.message || 'Failed to remove subscription' });
   }
-});
+);
 
 // Test push notification (admin only)
 apiRouter.post('/push/test', requireAdmin(), async (req, res) => {
@@ -8220,14 +8242,22 @@ apiRouter.post('/push/test', requireAdmin(), async (req, res) => {
 });
 
 // Get notification preferences (unified for Web Push and Apprise)
-apiRouter.get('/push/preferences', requireAuth(), async (req, res) => {
+apiRouter.get(
+  '/push/preferences',
+  requireAuth(),
+  requirePermission('messages', 'read', { sourceIdFrom: 'query' }),
+  async (req, res) => {
   try {
     const userId = req.session?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const prefs = await getUserNotificationPreferencesAsync(userId);
+    const sourceId = typeof req.query.sourceId === 'string' && req.query.sourceId
+      ? req.query.sourceId
+      : undefined;
+
+    const prefs = await getUserNotificationPreferencesAsync(userId, sourceId);
 
     if (prefs) {
       res.json(prefs);
@@ -8257,15 +8287,24 @@ apiRouter.get('/push/preferences', requireAuth(), async (req, res) => {
     logger.error('Error loading notification preferences:', error);
     res.status(500).json({ error: error.message || 'Failed to load preferences' });
   }
-});
+  }
+);
 
 // Save notification preferences (unified for Web Push and Apprise)
-apiRouter.post('/push/preferences', requireAuth(), async (req, res) => {
+apiRouter.post(
+  '/push/preferences',
+  requireAuth(),
+  requirePermission('messages', 'read', { sourceIdFrom: 'body' }),
+  async (req, res) => {
   try {
     const userId = req.session?.userId;
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+
+    const sourceId = typeof req.body?.sourceId === 'string' && req.body.sourceId
+      ? req.body.sourceId
+      : undefined;
 
     const {
       enableWebPush,
@@ -8368,11 +8407,11 @@ apiRouter.post('/push/preferences', requireAuth(), async (req, res) => {
       mutedDMs: mutedDMs ?? [],
     };
 
-    const success = await saveUserNotificationPreferencesAsync(userId, prefs);
+    const success = await saveUserNotificationPreferencesAsync(userId, prefs, sourceId);
 
     if (success) {
       logger.info(
-        `✅ Saved notification preferences for user ${userId} (WebPush: ${enableWebPush}, Apprise: ${enableApprise})`
+        `✅ Saved notification preferences for user ${userId} source=${sourceId ?? '(default)'} (WebPush: ${enableWebPush}, Apprise: ${enableApprise})`
       );
       res.json({ success: true });
     } else {
@@ -8382,7 +8421,8 @@ apiRouter.post('/push/preferences', requireAuth(), async (req, res) => {
     logger.error('Error saving notification preferences:', error);
     res.status(500).json({ error: error.message || 'Failed to save preferences' });
   }
-});
+  }
+);
 
 // ==========================================
 // Apprise Notification Endpoints
@@ -8404,15 +8444,32 @@ apiRouter.get('/apprise/status', requireAdmin(), async (_req, res) => {
 });
 
 // Send test Apprise notification (admin only)
-apiRouter.post('/apprise/test', requireAdmin(), async (req, res) => {
+apiRouter.post(
+  '/apprise/test',
+  requireAdmin(),
+  requirePermission('settings', 'write', { sourceIdFrom: 'body' }),
+  async (req, res) => {
   try {
     const userId = req.session?.userId;
     if (!userId) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
 
-    // Get user's Apprise URLs from their preferences
-    const prefs = await getUserNotificationPreferencesAsync(userId);
+    const sourceId = typeof req.body?.sourceId === 'string' && req.body.sourceId
+      ? req.body.sourceId
+      : undefined;
+    if (!sourceId) {
+      return res.status(400).json({ success: false, message: 'sourceId is required' });
+    }
+
+    // Resolve source for sourceName
+    const source = await databaseService.sources.getSource(sourceId);
+    if (!source) {
+      return res.status(400).json({ success: false, message: `Unknown sourceId: ${sourceId}` });
+    }
+
+    // Get user's Apprise URLs from their preferences (per-source)
+    const prefs = await getUserNotificationPreferencesAsync(userId, sourceId);
     if (!prefs || !prefs.appriseUrls || prefs.appriseUrls.length === 0) {
       return res.json({
         success: false,
@@ -8434,9 +8491,8 @@ apiRouter.post('/apprise/test', requireAdmin(), async (req, res) => {
         title: 'Test Notification',
         body,
         type: 'info',
-        // TODO Phase D: resolve real source for test notifications from route
-        sourceId: 'default',
-        sourceName: 'default',
+        sourceId,
+        sourceName: source.name ?? sourceId,
       },
       prefs.appriseUrls
     );
@@ -8450,7 +8506,8 @@ apiRouter.post('/apprise/test', requireAdmin(), async (req, res) => {
     logger.error('Error sending test Apprise notification:', error);
     res.status(500).json({ error: error.message || 'Failed to send test notification' });
   }
-});
+  }
+);
 
 // Get configured Apprise URLs (admin only)
 apiRouter.get('/apprise/urls', requireAdmin(), async (_req, res) => {

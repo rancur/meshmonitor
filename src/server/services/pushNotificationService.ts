@@ -172,12 +172,16 @@ class PushNotificationService {
   public async saveSubscription(
     userId: number | undefined,
     subscription: PushSubscription,
-    userAgent?: string
+    userAgent: string | undefined,
+    sourceId: string
   ): Promise<void> {
     try {
       const keys = subscription.keys;
       if (!keys || !keys.p256dh || !keys.auth) {
         throw new Error('Invalid subscription: missing keys');
+      }
+      if (!sourceId) {
+        throw new Error('sourceId is required for saveSubscription');
       }
 
       if (!databaseService.notificationsRepo) {
@@ -186,13 +190,14 @@ class PushNotificationService {
 
       await databaseService.notificationsRepo.saveSubscription({
         userId: userId ?? null,
+        sourceId,
         endpoint: subscription.endpoint,
         p256dhKey: keys.p256dh,
         authKey: keys.auth,
         userAgent: userAgent ?? null,
       });
 
-      logger.info(`✅ Saved push subscription for ${userId ? `user ${userId}` : 'anonymous user'}`);
+      logger.info(`✅ Saved push subscription for ${userId ? `user ${userId}` : 'anonymous user'} on source ${sourceId}`);
     } catch (error) {
       logger.error('❌ Failed to save push subscription:', error);
       throw error;
